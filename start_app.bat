@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 chcp 65001 >nul
-title Prisma Lab ERP - Asistente y Auto-Instalador 1-Clic
+title Prisma Lab ERP - Preparando Sistema
 color 0B
 
 set "ROOT_DIR=%~dp0"
@@ -9,14 +9,14 @@ cd /d "%ROOT_DIR%"
 
 echo ===============================================================================
 echo                PRISMA LAB ERP - SISTEMA INTEGRAL 3D
-echo            Auto-Instalador Desatendido y Arranque 1-Clic
+echo           Verificando Componentes y Preparando el Sistema...
 echo ===============================================================================
 echo.
 
 :: ============================================================================
 :: 1. VALIDACION Y AUTO-INSTALACION DE PYTHON
 :: ============================================================================
-echo [1/6] Verificando instalacion de Python...
+echo [1/5] Verificando instalacion de Python...
 
 call :REFRESH_PATH
 call :DETECT_PYTHON
@@ -64,12 +64,12 @@ echo       [OK] Python instalado y configurado correctamente.
 
 :PYTHON_READY
 for /f "tokens=*" %%v in ('!PYTHON_EXE! -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"') do set PY_VER=%%v
-echo       [OK] Python detectado y listo: version %PY_VER%
+echo       [OK] Python listo: version %PY_VER%
 
 :: ============================================================================
 :: 2. VALIDACION Y AUTO-INSTALACION DE NODE.JS Y NPM
 :: ============================================================================
-echo [2/6] Verificando instalacion de Node.js y npm...
+echo [2/5] Verificando instalacion de Node.js y npm...
 
 call :REFRESH_PATH
 call :DETECT_NODE
@@ -117,12 +117,12 @@ echo       [OK] Node.js instalado y configurado correctamente.
 :NODE_READY
 for /f "tokens=*" %%v in ('!NODE_EXE! -v') do set NODE_VER=%%v
 for /f "tokens=*" %%v in ('!NPM_CMD! -v') do set NPM_VER=%%v
-echo       [OK] Node.js detectado y listo: %NODE_VER% - npm v%NPM_VER%
+echo       [OK] Node.js listo: %NODE_VER% - npm v%NPM_VER%
 
 :: ============================================================================
 :: 3. VALIDACION DE ENTORNO VIRTUAL Y DEPENDENCIAS PYTHON (BACKEND)
 :: ============================================================================
-echo [3/6] Verificando entorno virtual y dependencias del Backend...
+echo [3/5] Verificando entorno virtual y dependencias del Backend...
 
 set "VENV_DIR=%ROOT_DIR%backend\venv"
 set "VENV_PYTHON=%ROOT_DIR%backend\venv\Scripts\python.exe"
@@ -130,7 +130,7 @@ set "VENV_UVICORN=%ROOT_DIR%backend\venv\Scripts\uvicorn.exe"
 
 if not exist "%VENV_PYTHON%" (
     echo       [*] Creando entorno virtual en backend\venv...
-    !PYTHON_EXE% -m venv "%VENV_DIR%"
+    !PYTHON_EXE! -m venv "%VENV_DIR%"
     if not exist "%VENV_PYTHON%" (
         echo [ERROR] No se pudo crear el entorno virtual en "%VENV_DIR%".
         pause
@@ -139,7 +139,7 @@ if not exist "%VENV_PYTHON%" (
 )
 
 if not exist "%VENV_UVICORN%" (
-    echo       [*] Instalando librerias requeridas de Python desde requirements.txt...
+    echo       [*] Instalando dependencias de Python desde requirements.txt...
     echo       [*] Esto puede tardar 1 o 2 minutos. Espere por favor...
     "%VENV_DIR%\Scripts\pip" install -r "%ROOT_DIR%backend\requirements.txt"
     if !errorlevel! neq 0 (
@@ -149,18 +149,18 @@ if not exist "%VENV_UVICORN%" (
     )
     echo       [OK] Dependencias de Python instaladas exitosamente.
 ) else (
-    echo       [OK] Entorno virtual de Python listo y librerias verificadas.
+    echo       [OK] Entorno virtual de Python listo y verificado.
 )
 
 :: ============================================================================
 :: 4. VALIDACION DE DEPENDENCIAS DE NODE.JS (FRONTEND)
 :: ============================================================================
-echo [4/6] Verificando modulos del Frontend...
+echo [4/5] Verificando modulos del Frontend...
 
 set "FRONTEND_VITE=%ROOT_DIR%frontend\node_modules\vite"
 
 if not exist "%FRONTEND_VITE%" (
-    echo       [*] Instalando dependencias de Node.js en frontend - npm install...
+    echo       [*] Instalando paquetes de Node.js en frontend - npm install...
     echo       [*] Esto puede tardar un momento. Espere por favor...
     cd /d "%ROOT_DIR%frontend"
     cmd /c !NPM_CMD! install
@@ -173,13 +173,13 @@ if not exist "%FRONTEND_VITE%" (
     cd /d "%ROOT_DIR%"
     echo       [OK] Dependencias de Node.js instaladas correctamente.
 ) else (
-    echo       [OK] Modulos de Node.js listos y verificados.
+    echo       [OK] Modulos de Node.js verificados.
 )
 
 :: ============================================================================
 :: 5. VALIDACION DE BASE DE DATOS Y MIGRACION
 :: ============================================================================
-echo [5/6] Verificando base de datos del sistema...
+echo [5/5] Verificando base de datos del sistema...
 
 set "DB_FILE=%ROOT_DIR%prisma_lab.db"
 set "BACKEND_DB=%ROOT_DIR%backend\prisma_lab.db"
@@ -189,7 +189,7 @@ if exist "%DB_FILE%" goto :DB_EXISTS
 if exist "%BACKEND_DB%" goto :DB_EXISTS
 
 if exist "%EXCEL_FILE%" (
-    echo       [*] No se encontro base de datos inicial pero se detecto archivo Excel.
+    echo       [*] No se encontro base de datos previa pero se detecto archivo Excel.
     echo       [*] Importando catalogo, clientes y costos desde Excel a SQLite...
     "%VENV_PYTHON%" "%ROOT_DIR%backend\import_excel.py"
     echo       [OK] Base de datos SQLite inicializada exitosamente.
@@ -205,59 +205,10 @@ echo       [OK] Base de datos local SQLite verificada.
 :DB_DONE
 
 :: ============================================================================
-:: 6. VALIDACION DE PUERTOS Y ARRANQUE DE SERVIDORES
+:: INICIAR PANEL DE CONTROL INTERACTIVO (LAUNCHER)
 :: ============================================================================
-echo [6/6] Verificando puertos e iniciando servidores...
-
-netstat -ano | findstr /C:":8000 " | findstr "LISTENING" >nul 2>&1
-if %errorlevel% equ 0 (
-    echo       [AVISO] El puerto 8000 ya esta en uso. Si Prisma Lab ya estaba abierto,
-    echo               se utilizara la sesion activa.
-)
-
-netstat -ano | findstr /C:":3000 " | findstr "LISTENING" >nul 2>&1
-if %errorlevel% equ 0 (
-    echo       [AVISO] El puerto 3000 ya esta en uso. Si Prisma Lab ya estaba abierto,
-    echo               se utilizara la sesion activa.
-)
-
-:: Iniciar Backend FastAPI en una ventana minimizada identificable
-echo       [*] Iniciando servidor Backend FastAPI en puerto 8000...
-start "Prisma Lab - Servidor Backend (FastAPI)" /min cmd /k "cd /d "%ROOT_DIR%backend" && .\venv\Scripts\activate && uvicorn app.main:app --host 127.0.0.1 --port 8000"
-
-:: Iniciar Frontend React Vite en una ventana minimizada identificable
-echo       [*] Iniciando servidor Frontend React en puerto 3000...
-start "Prisma Lab - Aplicacion Web (React Vite)" /min cmd /k "cd /d "%ROOT_DIR%frontend" && !NPM_CMD! run dev"
-
-:: Esperar a que el backend este en linea
-echo       [*] Conectando con los servicios...
-set ATTEMPTS=0
-
-:WAIT_LOOP
-ping 127.0.0.1 -n 2 >nul
-set /a ATTEMPTS+=1
-curl -s --connect-timeout 1 -o nul http://127.0.0.1:8000/api/health >nul 2>&1
-if %errorlevel% equ 0 goto :APP_READY
-if %ATTEMPTS% lss 8 goto :WAIT_LOOP
-
-:APP_READY
-echo.
-echo ===============================================================================
-echo      TODAS LAS VALIDACIONES COMPLETADAS - PRISMA LAB ERP ESTA EN LINEA
-echo ===============================================================================
-echo.
-echo   - Aplicacion Web:    http://localhost:3000
-echo   - Documentacion API: http://localhost:8000/docs
-echo.
-echo   [+] Abriendo Prisma Lab ERP en tu navegador predeterminado...
-start http://localhost:3000
-echo.
-echo ===============================================================================
-echo NOTA: Para cerrar el sistema, puedes cerrar las consolas minimizadas
-echo       en tu barra de tareas ("Prisma Lab - Servidor Backend" y "Prisma Lab - Aplicacion Web").
-echo ===============================================================================
-echo.
-ping 127.0.0.1 -n 4 >nul
+cls
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1"
 exit /b 0
 
 :: ============================================================================
