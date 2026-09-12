@@ -43,11 +43,13 @@ chmod +x start_app.sh
 ```
 
 El script se encargará automáticamente de:
-1. Crear el entorno virtual de Python en `backend/venv` e instalar las dependencias (`requirements.txt`).
-2. Instalar las dependencias de Node.js en `frontend/node_modules` (`npm install`).
-3. Levantar el Backend FastAPI (`http://localhost:8000`).
-4. Levantar el Frontend React Vite (`http://localhost:3000`).
-5. Abrir la aplicación web automáticamente en tu navegador predeterminado.
+1. **Zero-Setup para Clientes**: Valida e instala automáticamente Python 3.11 y Node.js LTS de forma desatendida y silenciosa si el equipo no los tiene instalados.
+2. **Entornos y Dependencias**: Crea el entorno virtual en `backend/venv`, instala las librerías de Python (`requirements.txt`) e instala los módulos de Node.js (`frontend/node_modules`).
+3. **Base de Datos Automática**: Si no existe base de datos previa, migra e inicializa automáticamente el catálogo y costos desde el Excel original a SQLite (`prisma_lab.db`).
+4. **Panel de Control Interactivo & Bandeja del Sistema (System Tray)**:
+   - Panel visual en consola con estado en vivo de FastAPI, React y SQLite.
+   - **Opción para ocultar en segundo plano**: Se minimiza a la sección de iconos ocultos (junto al reloj de Windows) con notificaciones y menú contextual (clic derecho / doble clic para restaurar).
+   - Opciones rápidas para abrir en navegador, reiniciar servicios, explorar backups o apagar el sistema limpiamente.
 
 ---
 
