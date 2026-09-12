@@ -1,0 +1,236 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+  }
+
+  body {
+    background-color: #101010;
+    color: #EAEAEA;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    padding-top: var(--sat);
+    padding-bottom: var(--sab);
+    padding-left: var(--sal);
+    padding-right: var(--sar);
+  }
+
+  /* Ocultar flechas/spinners en todos los inputs numéricos */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+/* Minimalist Flat Card Utility */
+.flat-card {
+  background-color: #1A1A1A;
+  border: 1px solid #2A2A2A;
+  border-radius: 4px;
+}
+
+/* Custom Scrollbar for Dark Mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #101010;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A2A;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
+}
+
+/* ========================================================= */
+/* ==================== MODO CLARO (LIGHT) ================= */
+/* ========================================================= */
+
+html.light body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+html.light .bg-slate-950,
+html.light .bg-slate-900 {
+  background-color: #F8FAFC !important;
+}
+
+html.light header,
+html.light aside {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .bg-\[\#101010\] {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .bg-\[\#1A1A1A\] {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+}
+
+html.light .bg-\[\#222222\] {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .bg-\[\#1F1F1F\] {
+  background-color: #E2E8F0 !important;
+}
+
+html.light .hover\:bg-\[\#222222\]:hover,
+html.light .hover\:bg-\[\#252525\]:hover,
+html.light .hover\:bg-\[\#1A1A1A\]\/50:hover {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .border-\[\#2A2A2A\],
+html.light .border-\[\#1F1F1F\] {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .divide-\[\#2A2A2A\]\/50 > :not([hidden]) ~ :not([hidden]),
+html.light .divide-\[\#2A2A2A\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .text-\[\#EAEAEA\] {
+  color: #0F172A !important;
+}
+
+html.light .text-\[\#A0A0A0\] {
+  color: #475569 !important;
+}
+
+html.light .text-\[\#666666\],
+html.light .text-\[\#888888\] {
+  color: #64748B !important;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #0F172A !important;
+}
+
+html.light .text-slate-300 {
+  color: #1E293B !important;
+}
+
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+
+/* Inputs, Selects, Textareas en Modo Claro */
+html.light input,
+html.light select,
+html.light textarea {
+  color: #0F172A !important;
+  background-color: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+html.light select option {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+html.light .flat-card {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Modals y Overlays */
+html.light .bg-black\/80 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Colores de Acento y Badges para Legibilidad */
+html.light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light .text-amber-400,
+html.light .text-amber-300 {
+  color: #D97706 !important;
+}
+
+html.light .text-sky-400 {
+  color: #0284C7 !important;
+}
+
+html.light .text-indigo-400,
+html.light .text-indigo-300 {
+  color: #4F46E5 !important;
+}
+
+html.light .text-rose-400,
+html.light .text-rose-300 {
+  color: #E11D48 !important;
+}
+
+html.light .bg-emerald-500\/10 {
+  background-color: #ECFDF5 !important;
+  border-color: #A7F3D0 !important;
+}
+
+html.light .bg-amber-500\/10 {
+  background-color: #FFFBEB !important;
+  border-color: #FDE68A !important;
+}
+
+html.light .bg-rose-500\/10 {
+  background-color: #FFF1F2 !important;
+  border-color: #FECDD3 !important;
+}
+
+html.light .bg-indigo-500\/10 {
+  background-color: #EEF2FF !important;
+  border-color: #C7D2FE !important;
+}
+
+html.light .bg-sky-500\/10 {
+  background-color: #F0F9FF !important;
+  border-color: #BAE6FD !important;
+}
+
+html.light .bg-slate-500\/10 {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* Scrollbars en Modo Claro */
+html.light ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

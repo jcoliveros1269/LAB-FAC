@@ -1,0 +1,77 @@
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 10000,
+});
+
+// Interceptor para manejo global de errores
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error.response ? error.response.data : error.message);
+    return Promise.reject(error);
+  }
+);
+
+// Services por módulo
+export const configService = {
+  getConfigs: () => api.get('/config'),
+  updateConfig: (data) => api.post('/config', data),
+  getDiscounts: () => api.get('/config/discounts'),
+  createDiscount: (data) => api.post('/config/discounts', data),
+  updateDiscount: (id, data) => api.put(`/config/discounts/${id}`, data),
+  deleteDiscount: (id) => api.delete(`/config/discounts/${id}`),
+};
+
+export const inventoryService = {
+  getMaterials: (params) => api.get('/inventory/materials', { params }),
+  createMaterial: (data) => api.post('/inventory/materials', data),
+  updateMaterial: (id, data) => api.put(`/inventory/materials/${id}`, data),
+  deleteMaterial: (id) => api.delete(`/inventory/materials/${id}`),
+  
+  getProducts: () => api.get('/inventory/products'),
+  createProduct: (data) => api.post('/inventory/products', data),
+
+  getAdditionalSupplies: (params) => api.get('/inventory/additional-supplies', { params }),
+  createAdditionalSupply: (data) => api.post('/inventory/additional-supplies', data),
+  updateAdditionalSupply: (id, data) => api.put(`/inventory/additional-supplies/${id}`, data),
+  deleteAdditionalSupply: (id) => api.delete(`/inventory/additional-supplies/${id}`),
+};
+
+export const productionService = {
+  calculate: (data) => api.post('/production/calculate', data),
+  getHistory: () => api.get('/production'),
+  getNextCode: () => api.get('/production/next-code'),
+  deleteCalculation: (id) => api.delete(`/production/${id}`),
+  updateCalculation: (id, data) => api.put(`/production/${id}`, data),
+};
+
+export const salesService = {
+  getCustomers: () => api.get('/sales/customers'),
+  createCustomer: (data) => api.post('/sales/customers', data),
+  updateCustomer: (id, data) => api.put(`/sales/customers/${id}`, data),
+  deleteCustomer: (id) => api.delete(`/sales/customers/${id}`),
+  getDocuments: (docType) => api.get('/sales/documents', { params: { doc_type: docType } }),
+  createDocument: (data) => api.post('/sales/documents', data),
+  convertToInvoice: (id) => api.post(`/sales/documents/${id}/convert-to-invoice`),
+};
+
+export const accountingService = {
+  getPuc: () => api.get('/accounting/puc'),
+  createPuc: (data) => api.post('/accounting/puc', data),
+  getJournal: (params) => api.get('/accounting/journal', { params }),
+  createJournal: (data) => api.post('/accounting/journal', data),
+  getCashFlow: () => api.get('/accounting/cashflow'),
+  createCashFlow: (data) => api.post('/accounting/cashflow', data),
+  getPnlReport: () => api.get('/accounting/reports/pnl'),
+  getBalanceReport: () => api.get('/accounting/reports/balance'),
+  getMonthlyTrend: () => api.get('/accounting/reports/monthly-trend'),
+};
+
+export default api;
