@@ -239,6 +239,17 @@ export default function Sales() {
     }
   };
 
+  const handleDeleteDocument = async (id, docNumber) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el documento ${docNumber}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await salesService.deleteDocument(id);
+      toast.success(`Documento ${docNumber} eliminado`);
+      loadSalesData();
+    } catch (err) {
+      toast.error('Error al eliminar documento');
+    }
+  };
+
   // Cálculo en tiempo real para el Cotizador Estilo Excel
   const calculateQuoteTotals = () => {
     const totalHours = (parseFloat(quoteForm.hours) || 0) + ((parseFloat(quoteForm.minutes) || 0) / 60);
@@ -523,7 +534,7 @@ export default function Sales() {
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-hidden">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -575,6 +586,14 @@ export default function Sales() {
                               Facturar
                             </button>
                           )}
+
+                          <button
+                            onClick={() => handleDeleteDocument(doc.id, doc.doc_number)}
+                            title="Eliminar Documento"
+                            className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-sm border border-rose-500/20 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1039,7 +1058,7 @@ export default function Sales() {
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-hidden">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -1055,10 +1074,10 @@ export default function Sales() {
                     {filteredCustomers.map((c) => (
                       <tr key={c.id} className="hover:bg-[#222222]">
                         <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">{c.id}</td>
-                        <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">{c.name}</td>
-                        <td className="py-2.5 px-3 text-[#A0A0A0]">{c.email || 'Sin correo'}</td>
+                        <td className="py-2.5 px-3 font-medium text-[#EAEAEA] break-words">{c.name}</td>
+                        <td className="py-2.5 px-3 text-[#A0A0A0] break-all">{c.email || 'Sin correo'}</td>
                         <td className="py-2.5 px-3 text-slate-300 font-mono">{c.phone || 'Sin teléfono'}</td>
-                        <td className="py-2.5 px-3 text-[#666666]">{c.address || 'Sin dirección'}</td>
+                        <td className="py-2.5 px-3 text-[#666666] break-words">{c.address || 'Sin dirección'}</td>
                         <td className="py-2.5 px-3 text-center flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => handleOpenEditCustomer(c)}

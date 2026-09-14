@@ -168,7 +168,7 @@ export default function Config() {
   };
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 w-full">
       {/* Respaldo */}
       <div className="bg-[#1A1A1A] border border-[#2A2A2A] p-4 rounded-sm flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -293,7 +293,7 @@ export default function Config() {
                   <span className="text-amber-400 text-[10px] animate-pulse">Editando fila seleccionada...</span>
                 )}
               </div>
-              <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
+              <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">

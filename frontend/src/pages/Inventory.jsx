@@ -207,6 +207,17 @@ export default function Inventory() {
     }
   };
 
+  const handleDeleteProduct = async (id, name) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el producto '${name}' del inventario? Esta acción no se puede deshacer.`)) return;
+    try {
+      await inventoryService.deleteProduct(id);
+      toast.success(`Producto '${name}' eliminado`);
+      loadInventory();
+    } catch (err) {
+      toast.error('Error eliminando producto terminado');
+    }
+  };
+
   const handleSaveNotes = async (id, newNotes) => {
     const currentItem = materials.find(m => m.id === id);
     if (currentItem && (currentItem.notes || '') === newNotes) return;
@@ -730,23 +741,23 @@ export default function Inventory() {
           <div className="text-[10px] text-[#A0A0A0] px-0.5">
             Mostrando <strong className="text-[#EAEAEA]">{filteredMaterials.length}</strong> de <strong className="text-[#EAEAEA]">{materials.length}</strong> filamentos e insumos
           </div>
-          <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
+            <table className="w-full text-left text-[11px] border-collapse">
               <thead>
-                <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
-                  <th className="py-2.5 px-3 font-semibold">Material / Referencia</th>
-                  <th className="py-2.5 px-3 font-semibold">Tipo</th>
-                  <th className="py-2.5 px-3 font-semibold">Color</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Stock Inicial</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Salidas (g)</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Stock Actual</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Costo / g</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Costo Total</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Costo Gastado</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Valor en Stock</th>
-                  <th className="py-2.5 px-3 font-semibold">Observaciones</th>
-                  <th className="py-2.5 px-3 font-semibold text-center">Estado</th>
-                  <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
+                <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
+                  <th className="py-2 px-2 font-semibold">Material / Ref</th>
+                  <th className="py-2 px-1.5 font-semibold">Tipo</th>
+                  <th className="py-2 px-1.5 font-semibold">Color</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Inicial</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Salidas</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Actual</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Costo/g</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Costo Total</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Gastado</th>
+                  <th className="py-2 px-1.5 font-semibold text-right">Valor Stock</th>
+                  <th className="py-2 px-2 font-semibold">Observaciones</th>
+                  <th className="py-2 px-1.5 font-semibold text-center">Estado</th>
+                  <th className="py-2 px-1.5 font-semibold text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -759,37 +770,37 @@ export default function Inventory() {
 
                   return (
                     <tr key={item.id} className="hover:bg-[#222222] transition-colors">
-                      <td className="py-2.5 px-3 font-medium text-[#EAEAEA] whitespace-nowrap">{item.name}</td>
-                      <td className="py-2.5 px-3 text-[#A0A0A0] font-mono whitespace-nowrap">
-                        <span className="px-1.5 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[10px]">
+                      <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">{item.name}</td>
+                      <td className="py-2 px-1.5 text-[#A0A0A0] font-mono">
+                        <span className="px-1 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[9px]">
                           {item.material_type}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-[#EAEAEA] whitespace-nowrap">{item.color}</td>
-                      <td className="py-2.5 px-3 text-right text-[#A0A0A0] font-mono whitespace-nowrap">
-                        {(item.initial_stock_g || 0).toLocaleString('es-CO')} g
+                      <td className="py-2 px-1.5 text-[#EAEAEA] break-words">{item.color}</td>
+                      <td className="py-2 px-1.5 text-right text-[#A0A0A0] font-mono">
+                        {(item.initial_stock_g || 0).toLocaleString('es-CO')}g
                       </td>
-                      <td className="py-2.5 px-3 text-right text-amber-400 font-mono whitespace-nowrap">
-                        {(item.outgoing_stock_g || 0).toLocaleString('es-CO')} g
+                      <td className="py-2 px-1.5 text-right text-amber-400 font-mono">
+                        {(item.outgoing_stock_g || 0).toLocaleString('es-CO')}g
                       </td>
-                      <td className="py-2.5 px-3 text-right font-medium font-mono whitespace-nowrap">
+                      <td className="py-2 px-1.5 text-right font-medium font-mono">
                         <span className={isOut ? 'text-rose-400 font-bold' : isLow ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                          {(item.current_stock_g || 0).toLocaleString('es-CO')} g
+                          {(item.current_stock_g || 0).toLocaleString('es-CO')}g
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right text-emerald-400 font-mono font-semibold whitespace-nowrap">
+                      <td className="py-2 px-1.5 text-right text-emerald-400 font-mono font-semibold">
                         ${(item.cost_per_g || 0).toFixed(2)}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-[#A0A0A0] font-mono whitespace-nowrap">
-                        ${totalCostVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="py-2 px-1.5 text-right text-[#A0A0A0] font-mono">
+                        ${totalCostVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-amber-400/90 font-mono whitespace-nowrap">
-                        ${spentVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="py-2 px-1.5 text-right text-amber-400/90 font-mono">
+                        ${spentVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-emerald-400 font-mono font-bold whitespace-nowrap">
-                        ${currentVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="py-2 px-1.5 text-right text-emerald-400 font-mono font-bold">
+                        ${currentVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
-                      <td className="py-2 px-2.5 min-w-[160px]">
+                      <td className="py-1 px-1.5">
                         <input
                           type="text"
                           defaultValue={item.notes || ''}
@@ -798,27 +809,27 @@ export default function Inventory() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') e.target.blur();
                           }}
-                          placeholder="Añadir nota..."
-                          className="w-full bg-transparent hover:bg-[#101010] focus:bg-[#101010] border border-transparent hover:border-[#2A2A2A] focus:border-slate-500 rounded-sm px-2 py-1 text-xs text-[#EAEAEA] placeholder:text-[#555555] transition-all outline-none"
+                          placeholder="Nota..."
+                          className="w-full min-w-0 bg-transparent hover:bg-[#101010] focus:bg-[#101010] border border-transparent hover:border-[#2A2A2A] focus:border-slate-500 rounded-sm px-1.5 py-0.5 text-[10px] text-[#EAEAEA] placeholder:text-[#555555] transition-all outline-none"
                           title="Haz clic para editar la observación"
                         />
                       </td>
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <td className="py-2 px-1 text-center">
                         {isOut ? (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-sm">
+                          <span className="px-1.5 py-0.5 text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-sm">
                             AGOTADO
                           </span>
                         ) : isLow ? (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-sm">
+                          <span className="px-1.5 py-0.5 text-[9px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-sm">
                             REPONER
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-sm">
+                          <span className="px-1.5 py-0.5 text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-sm">
                             ÓPTIMO
                           </span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <td className="py-2 px-1 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => handleOpenEditMaterial(item)}
@@ -837,6 +848,7 @@ export default function Inventory() {
                         </div>
                       </td>
                     </tr>
+
                   );
                 })}
               </tbody>
@@ -853,20 +865,21 @@ export default function Inventory() {
               No hay productos terminados registrados con los filtros seleccionados.
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
+              <table className="w-full text-left text-[11px] border-collapse">
                 <thead>
-                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
-                    <th className="py-2.5 px-3 font-semibold">Serial / Código</th>
-                    <th className="py-2.5 px-3 font-semibold">Producto / Pieza</th>
-                    <th className="py-2.5 px-3 font-semibold">Color</th>
-                    <th className="py-2.5 px-3 font-semibold">Tipo Material</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Stock Actual</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Costo Unitario</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Precio Venta (con Margen)</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Valor Total (Costo)</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Valor Total (Venta)</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Estado</th>
+                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
+                    <th className="py-2 px-2 font-semibold">Serial</th>
+                    <th className="py-2 px-2 font-semibold">Producto / Pieza</th>
+                    <th className="py-2 px-1.5 font-semibold">Color</th>
+                    <th className="py-2 px-1.5 font-semibold">Tipo</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Stock</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Costo Unit.</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Precio Venta</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Total Costo</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Total Venta</th>
+                    <th className="py-2 px-1.5 font-semibold text-center">Estado</th>
+                    <th className="py-2 px-1.5 font-semibold text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -880,39 +893,50 @@ export default function Inventory() {
 
                     return (
                       <tr key={p.id} className="hover:bg-[#222222] transition-colors">
-                        <td className="py-2.5 px-3 font-mono text-slate-300 font-medium whitespace-nowrap">{p.serial || '-'}</td>
-                        <td className="py-2.5 px-3 font-medium text-[#EAEAEA] whitespace-nowrap">{p.name}</td>
-                        <td className="py-2.5 px-3 text-[#A0A0A0] whitespace-nowrap">{p.color || 'Multicolor'}</td>
-                        <td className="py-2.5 px-3 text-[#666666] font-mono whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[10px]">
+                        <td className="py-2 px-2 font-mono text-slate-300 font-medium">{p.serial || '-'}</td>
+                        <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">{p.name}</td>
+                        <td className="py-2 px-1.5 text-[#A0A0A0] break-words">{p.color || 'Multicolor'}</td>
+                        <td className="py-2 px-1.5 text-[#666666] font-mono">
+                          <span className="px-1.5 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[9px]">
                             {p.material_type || 'Pieza 3D'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-medium text-[#EAEAEA] whitespace-nowrap">
+                        <td className="py-2 px-1.5 text-right font-medium text-[#EAEAEA]">
                           {safeStock} und
                         </td>
-                        <td className="py-2.5 px-3 text-right text-[#A0A0A0] font-mono whitespace-nowrap">
-                          ${safeUnitCost.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-2 px-1.5 text-right text-[#A0A0A0] font-mono">
+                          ${safeUnitCost.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-semibold text-emerald-400 font-mono whitespace-nowrap">
-                          ${safeSalePrice.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-2 px-1.5 text-right font-semibold text-emerald-400 font-mono">
+                          ${safeSalePrice.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-[#EAEAEA] font-mono font-medium whitespace-nowrap">
-                          ${totalCostVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-2 px-1.5 text-right text-[#EAEAEA] font-mono font-medium">
+                          ${totalCostVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-emerald-400 font-mono font-bold whitespace-nowrap">
-                          ${totalSaleVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-2 px-1.5 text-right text-emerald-400 font-mono font-bold">
+                          ${totalSaleVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-1 text-center">
                           {isAvailable ? (
-                            <span className="px-2 py-0.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-sm">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-sm">
                               DISPONIBLE
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 text-[10px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-sm">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-sm">
                               SIN STOCK
                             </span>
                           )}
+                        </td>
+                        <td className="py-2 px-1 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleDeleteProduct(p.id, p.name)}
+                              title="Eliminar Producto"
+                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -933,17 +957,17 @@ export default function Inventory() {
               No hay insumos adicionales registrados con los filtros seleccionados.
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
+              <table className="w-full text-left text-[11px] border-collapse">
                 <thead>
-                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
-                    <th className="py-2.5 px-3 font-semibold">Insumo / Concepto</th>
-                    <th className="py-2.5 px-3 font-semibold">Tipo</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Costo Unitario</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Stock Disponible</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Valor Total en Stock</th>
-                    <th className="py-2.5 px-3 font-semibold">Observaciones</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
+                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
+                    <th className="py-2 px-2.5 font-semibold">Insumo / Concepto</th>
+                    <th className="py-2 px-2 font-semibold">Tipo</th>
+                    <th className="py-2 px-2 font-semibold text-right">Costo Unit.</th>
+                    <th className="py-2 px-2 font-semibold text-right">Disponible</th>
+                    <th className="py-2 px-2 font-semibold text-right">Total Stock</th>
+                    <th className="py-2 px-2 font-semibold">Observaciones</th>
+                    <th className="py-2 px-2 font-semibold text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -955,30 +979,30 @@ export default function Inventory() {
 
                     return (
                       <tr key={s.id} className="hover:bg-[#222222] transition-colors">
-                        <td className="py-2.5 px-3 font-medium text-[#EAEAEA] whitespace-nowrap">
+                        <td className="py-2 px-2.5 font-medium text-[#EAEAEA] break-words">
                           {s.name}
                         </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                        <td className="py-2 px-2">
                           {isPapeleria ? (
-                            <span className="px-2 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold text-[10px] flex items-center gap-1 w-max">
-                              <FileText className="w-3 h-3" /> PAPELERÍA / EMPAQUE
+                            <span className="px-1.5 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold text-[9px] flex items-center gap-1 w-max">
+                              <FileText className="w-3 h-3" /> PAPELERÍA
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-sm bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold text-[10px] flex items-center gap-1 w-max">
-                              <Wrench className="w-3 h-3" /> MANTENIMIENTO / REPUESTO
+                            <span className="px-1.5 py-0.5 rounded-sm bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold text-[9px] flex items-center gap-1 w-max">
+                              <Wrench className="w-3 h-3" /> MANTENIMIENTO
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-emerald-400 font-semibold whitespace-nowrap">
-                          ${safeCost.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
+                        <td className="py-2 px-2 text-right font-mono text-emerald-400 font-semibold">
+                          ${safeCost.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[#EAEAEA] font-medium whitespace-nowrap">
+                        <td className="py-2 px-2 text-right font-mono text-[#EAEAEA] font-medium">
                           {safeStock.toLocaleString('es-CO')} und
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-emerald-400 font-bold whitespace-nowrap">
-                          ${totalVal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
+                        <td className="py-2 px-2 text-right font-mono text-emerald-400 font-bold">
+                          ${totalVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-2.5 min-w-[180px]">
+                        <td className="py-1 px-2">
                           <input
                             type="text"
                             defaultValue={s.notes || ''}
@@ -987,12 +1011,12 @@ export default function Inventory() {
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') e.target.blur();
                             }}
-                            placeholder="Añadir observación..."
-                            className="w-full bg-transparent hover:bg-[#101010] focus:bg-[#101010] border border-transparent hover:border-[#2A2A2A] focus:border-slate-500 rounded-sm px-2 py-1 text-xs text-[#EAEAEA] placeholder:text-[#555555] transition-all outline-none"
+                            placeholder="Observación..."
+                            className="w-full min-w-0 bg-transparent hover:bg-[#101010] focus:bg-[#101010] border border-transparent hover:border-[#2A2A2A] focus:border-slate-500 rounded-sm px-1.5 py-0.5 text-[10px] text-[#EAEAEA] placeholder:text-[#555555] transition-all outline-none"
                             title="Haz clic para editar la observación"
                           />
                         </td>
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-2 text-center">
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={() => handleOpenEditSupply(s)}
@@ -1016,6 +1040,7 @@ export default function Inventory() {
                 </tbody>
               </table>
             </div>
+
           )}
         </div>
       )}

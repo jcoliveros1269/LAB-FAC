@@ -219,3 +219,15 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     db.refresh(doc)
     return doc
 
+@router.delete("/documents/{doc_id}")
+def delete_sales_document(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(DocumentType).filter(DocumentType.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    # Eliminar items asociados al documento
+    db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).delete()
+    db.delete(doc)
+    db.commit()
+    return {"message": "Documento eliminado correctamente"}
+

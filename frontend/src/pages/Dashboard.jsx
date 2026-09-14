@@ -298,7 +298,7 @@ export default function Dashboard({ setActiveTab }) {
                 <div className="text-[10px] text-[#A0A0A0] px-0.5">
                   Mostrando <strong className="text-[#EAEAEA]">{filteredLowStock.length}</strong> de <strong className="text-[#EAEAEA]">{stats.lowStockMaterials.length}</strong> alertas de stock bajo
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-hidden">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">

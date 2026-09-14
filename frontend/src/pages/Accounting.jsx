@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, DollarSign, RefreshCw, Layers, Search, Plus, X, Filter, List, CheckCircle2, Scale, ChevronDown, ChevronRight, FolderTree, ArrowRight } from 'lucide-react';
+import { BookOpen, DollarSign, RefreshCw, Layers, Search, Plus, X, Filter, List, CheckCircle2, Scale, ChevronDown, ChevronRight, FolderTree, ArrowRight, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { accountingService } from '../services/api';
 
@@ -158,6 +158,39 @@ export default function Accounting() {
       alert('Ocurrió un error al guardar el movimiento en el flujo de caja.');
     } finally {
       setSubmittingCash(false);
+    }
+  };
+
+  const handleDeletePuc = async (id, code, name) => {
+    if (!window.confirm(`¿Estás seguro de eliminar la cuenta PUC ${code} - "${name}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await accountingService.deletePuc(id);
+      await loadAccountingData();
+    } catch (err) {
+      console.error('Error al eliminar cuenta PUC:', err);
+      alert(err.response?.data?.detail || 'Ocurrió un error al eliminar la cuenta PUC.');
+    }
+  };
+
+  const handleDeleteCashFlow = async (id, description) => {
+    if (!window.confirm(`¿Estás seguro de eliminar este registro del flujo de caja: "${description}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await accountingService.deleteCashFlow(id);
+      await loadAccountingData();
+    } catch (err) {
+      console.error('Error al eliminar registro de flujo de caja:', err);
+      alert('Ocurrió un error al eliminar el registro de flujo de caja.');
+    }
+  };
+
+  const handleDeleteJournalEntry = async (entryNumber) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el Asiento Contable #${entryNumber} completo? Se eliminarán todas las partidas asociadas para mantener la partida doble cuadrada.`)) return;
+    try {
+      await accountingService.deleteJournal(entryNumber);
+      await loadAccountingData();
+    } catch (err) {
+      console.error('Error al eliminar asiento contable:', err);
+      alert('Ocurrió un error al eliminar el asiento contable.');
     }
   };
 
@@ -556,7 +589,7 @@ export default function Accounting() {
 
           {/* VISTA 1: ASIENTOS DE DIARIO */}
           {journalViewMode === 'journal' && (
-            <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
+            <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -567,6 +600,7 @@ export default function Accounting() {
                     <th className="py-2.5 px-3 font-semibold">Concepto</th>
                     <th className="py-2.5 px-3 font-semibold text-right">Debe</th>
                     <th className="py-2.5 px-3 font-semibold text-right">Haber</th>
+                    <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -586,11 +620,20 @@ export default function Accounting() {
                         <td className="py-2.5 px-3 text-right font-mono text-amber-400 font-medium">
                           {row.credit > 0 ? `$${row.credit.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                         </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            onClick={() => handleDeleteJournalEntry(row.entry_number)}
+                            title={`Eliminar Asiento Contable #${row.entry_number}`}
+                            className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="py-8 text-center text-[#A0A0A0] text-xs">
+                      <td colSpan="8" className="py-8 text-center text-[#A0A0A0] text-xs">
                         {journalSearch || journalClassFilter !== 'all' ? 'No se encontraron asientos contables con los filtros seleccionados.' : 'No hay asientos contables registrados.'}
                       </td>
                     </tr>
@@ -608,6 +651,7 @@ export default function Accounting() {
                       <td className="py-2.5 px-3 text-right font-mono text-amber-400">
                         ${totalJournalCredit.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
+                      <td className="py-2.5 px-3"></td>
                     </tr>
                   </tfoot>
                 )}
@@ -617,7 +661,7 @@ export default function Accounting() {
 
           {/* VISTA 2: LIBRO MAYOR (SALDOS POR CUENTA PUC) */}
           {journalViewMode === 'ledger' && (
-            <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
+            <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -766,7 +810,7 @@ export default function Accounting() {
           </div>
 
           {/* Tabla PUC con Desplegable de Cuentas */}
-          <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
+          <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -775,6 +819,7 @@ export default function Accounting() {
                   <th className="py-2.5 px-3 font-semibold">Nombre de Cuenta</th>
                   <th className="py-2.5 px-3 font-semibold">Tipo</th>
                   <th className="py-2.5 px-3 font-semibold text-center">Clase</th>
+                  <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -827,12 +872,21 @@ export default function Accounting() {
                               Clase {classDigit}
                             </span>
                           </td>
+                          <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleDeletePuc(acc.id, acc.code, acc.name)}
+                              title={`Eliminar Cuenta PUC ${acc.code}`}
+                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          </td>
                         </tr>
 
                         {/* DESPLEGABLE DE CUENTAS */}
                         {isExpanded && (
                           <tr className="bg-[#121212] border-y border-[#2A2A2A]">
-                            <td colSpan="5" className="p-4 space-y-4">
+                            <td colSpan="6" className="p-4 space-y-4">
                               <div className="bg-[#181818] border border-[#2A2A2A] rounded-sm p-3.5 space-y-3">
                                 {/* Header del Desplegable */}
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#2A2A2A] pb-2.5">
@@ -976,7 +1030,7 @@ export default function Accounting() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="5" className="py-8 text-center text-[#A0A0A0] text-xs">
+                    <td colSpan="6" className="py-8 text-center text-[#A0A0A0] text-xs">
                       No se encontraron cuentas PUC con los filtros aplicados.
                     </td>
                   </tr>
@@ -1060,7 +1114,7 @@ export default function Accounting() {
             )}
           </div>
 
-          <div className="overflow-x-auto border border-[#2A2A2A] rounded-sm">
+          <div className="overflow-hidden border border-[#2A2A2A] rounded-sm">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
@@ -1070,6 +1124,7 @@ export default function Accounting() {
                   <th className="py-2.5 px-3 font-semibold text-right">Ingreso (+)</th>
                   <th className="py-2.5 px-3 font-semibold text-right">Egreso (-)</th>
                   <th className="py-2.5 px-3 font-semibold text-right">Balance</th>
+                  <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2A2A]/50">
@@ -1088,11 +1143,20 @@ export default function Accounting() {
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#EAEAEA]">
                         ${cf.balance.toLocaleString('es-CO')}
                       </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button
+                          onClick={() => handleDeleteCashFlow(cf.id, cf.description)}
+                          title="Eliminar Movimiento"
+                          className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="py-8 text-center text-[#A0A0A0] text-xs">
+                    <td colSpan="7" className="py-8 text-center text-[#A0A0A0] text-xs">
                       {cashSearch || cashTypeFilter !== 'ALL' ? 'No se encontraron movimientos con los filtros seleccionados.' : 'No hay registros en el flujo de caja.'}
                     </td>
                   </tr>

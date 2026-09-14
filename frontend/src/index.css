@@ -22,6 +22,8 @@
     padding-bottom: var(--sab);
     padding-left: var(--sal);
     padding-right: var(--sar);
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   /* Ocultar flechas/spinners en todos los inputs numéricos */
@@ -33,6 +35,17 @@
   input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
+  }
+
+  /* Tablas adaptativas al 100% del ancho sin límite horizontal ni scroll */
+  table {
+    width: 100%;
+    table-layout: auto;
+  }
+
+  table th, table td {
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 }
 

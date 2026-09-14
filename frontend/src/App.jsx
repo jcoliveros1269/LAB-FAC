@@ -83,7 +83,7 @@ export default function App() {
 
         <Header activeTitle={titles[activeTab] || 'Prisma Lab ERP'} theme={theme} toggleTheme={toggleTheme} />
 
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 md:p-6 w-full space-y-6">
           {renderActiveView()}
         </main>
       </div>

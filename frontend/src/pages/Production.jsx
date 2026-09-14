@@ -834,33 +834,33 @@ export default function Production({ setActiveTab }) {
           </div>
 
           <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-hidden">
+              <table className="w-full text-left text-[11px] border-collapse">
                 <thead>
-                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
-                    <th className="py-2.5 px-3 font-semibold">Código</th>
-                    <th className="py-2.5 px-3 font-semibold">Proyecto</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Cant</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Gramos</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Horas</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Costo Mat.</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Energía</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Depreciación</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Descuento</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Costo Unit.</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Precio Margen</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
+                  <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
+                    <th className="py-2 px-1.5 font-semibold">Código</th>
+                    <th className="py-2 px-2 font-semibold">Proyecto</th>
+                    <th className="py-2 px-1 font-semibold text-center">Cant</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Gramos</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Horas</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Mat.</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Energía</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Deprec.</th>
+                    <th className="py-2 px-1 font-semibold text-center">Desc.</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Costo Unit.</th>
+                    <th className="py-2 px-1.5 font-semibold text-right">Precio Venta</th>
+                    <th className="py-2 px-1.5 font-semibold text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2A2A]/50">
                   {filteredHistory.length > 0 ? (
                     filteredHistory.map((row) => (
                       <tr key={row.id} className="hover:bg-[#222222] transition-colors">
-                        <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">{row.project_code}</td>
-                        <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">
-                          <div>{row.project_name}</div>
+                        <td className="py-1.5 px-1.5 font-mono font-semibold text-emerald-400">{row.project_code}</td>
+                        <td className="py-1.5 px-2 font-medium text-[#EAEAEA]">
+                          <div className="break-words">{row.project_name}</div>
                           {(row.filament1_type || row.filament2_type) && (
-                            <div className="text-[10px] text-[#777777] flex flex-wrap gap-1 mt-0.5">
+                            <div className="text-[9px] text-[#777777] flex flex-wrap gap-1 mt-0.5">
                               {[
                                 row.filament1_type && `${row.filament1_type}${row.filament1_color ? ` ${row.filament1_color}` : ''} (${row.filament1_grams}g)`,
                                 row.filament2_type && `${row.filament2_type}${row.filament2_color ? ` ${row.filament2_color}` : ''} (${row.filament2_grams}g)`,
@@ -870,24 +870,24 @@ export default function Production({ setActiveTab }) {
                             </div>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-center text-[#A0A0A0] font-semibold">{row.quantity}</td>
-                        <td className="py-2.5 px-3 text-right text-[#A0A0A0] font-mono">{row.total_grams} g</td>
-                        <td className="py-2.5 px-3 text-right text-[#666666] font-mono">{row.print_hours} h</td>
-                        <td className="py-2.5 px-3 text-right text-[#A0A0A0] font-mono">${(row.material_cost || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right text-amber-400 font-mono font-medium">${(row.energy_cost || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right text-slate-300 font-mono font-medium">${(row.depreciation_cost || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-1 text-center text-[#A0A0A0] font-semibold">{row.quantity}</td>
+                        <td className="py-1.5 px-1.5 text-right text-[#A0A0A0] font-mono">{row.total_grams}g</td>
+                        <td className="py-1.5 px-1.5 text-right text-[#666666] font-mono">{row.print_hours}h</td>
+                        <td className="py-1.5 px-1.5 text-right text-[#A0A0A0] font-mono">${(row.material_cost || 0).toFixed(1)}</td>
+                        <td className="py-1.5 px-1.5 text-right text-amber-400 font-mono font-medium">${(row.energy_cost || 0).toFixed(1)}</td>
+                        <td className="py-1.5 px-1.5 text-right text-slate-300 font-mono font-medium">${(row.depreciation_cost || 0).toFixed(1)}</td>
+                        <td className="py-1.5 px-1 text-center">
                           {row.discount_percentage > 0 || row.discount_amount > 0 ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono font-semibold" title={row.discount_amount ? `-$${row.discount_amount.toLocaleString('es-CO')}` : ''}>
+                            <span className="px-1 py-0.5 rounded text-[9px] bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono font-semibold" title={row.discount_amount ? `-$${row.discount_amount.toLocaleString('es-CO')}` : ''}>
                               {row.discount_percentage ? `-${row.discount_percentage}%` : `-$${row.discount_amount.toLocaleString('es-CO')}`}
                             </span>
                           ) : (
                             <span className="text-[#555555] font-mono">-</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-[#EAEAEA] font-mono font-semibold">${(row.total_unit_cost || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })}</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-emerald-400 font-mono">${(row.suggested_price_margin || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })}</td>
-                        <td className="py-2.5 px-3 text-center flex items-center justify-center gap-1.5">
+                        <td className="py-1.5 px-1.5 text-right text-[#EAEAEA] font-mono font-semibold">${(row.total_unit_cost || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                        <td className="py-1.5 px-1.5 text-right font-bold text-emerald-400 font-mono">${(row.suggested_price_margin || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                        <td className="py-1.5 px-1.5 text-center flex items-center justify-center gap-1">
                           <button
                             onClick={() => handleOpenEditModal(row)}
                             title="Editar Registro"
@@ -913,6 +913,7 @@ export default function Production({ setActiveTab }) {
                     </tr>
                   )}
                 </tbody>
+
               </table>
             </div>
           </div>

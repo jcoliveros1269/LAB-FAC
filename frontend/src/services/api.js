@@ -37,6 +37,7 @@ export const inventoryService = {
   
   getProducts: () => api.get('/inventory/products'),
   createProduct: (data) => api.post('/inventory/products', data),
+  deleteProduct: (id) => api.delete(`/inventory/products/${id}`),
 
   getAdditionalSupplies: (params) => api.get('/inventory/additional-supplies', { params }),
   createAdditionalSupply: (data) => api.post('/inventory/additional-supplies', data),
@@ -60,15 +61,19 @@ export const salesService = {
   getDocuments: (docType) => api.get('/sales/documents', { params: { doc_type: docType } }),
   createDocument: (data) => api.post('/sales/documents', data),
   convertToInvoice: (id) => api.post(`/sales/documents/${id}/convert-to-invoice`),
+  deleteDocument: (id) => api.delete(`/sales/documents/${id}`),
 };
 
 export const accountingService = {
   getPuc: () => api.get('/accounting/puc'),
   createPuc: (data) => api.post('/accounting/puc', data),
+  deletePuc: (id) => api.delete(`/accounting/puc/${id}`),
   getJournal: (params) => api.get('/accounting/journal', { params }),
   createJournal: (data) => api.post('/accounting/journal', data),
+  deleteJournal: (entryNumber) => api.delete(`/accounting/journal/${entryNumber}`),
   getCashFlow: () => api.get('/accounting/cashflow'),
   createCashFlow: (data) => api.post('/accounting/cashflow', data),
+  deleteCashFlow: (id) => api.delete(`/accounting/cashflow/${id}`),
   getPnlReport: () => api.get('/accounting/reports/pnl'),
   getBalanceReport: () => api.get('/accounting/reports/balance'),
   getMonthlyTrend: () => api.get('/accounting/reports/monthly-trend'),

@@ -140,6 +140,15 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
 
     return db_product
 
+@router.delete("/products/{product_id}")
+def delete_finished_product(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto terminado no encontrado")
+    db.delete(product)
+    db.commit()
+    return {"message": "Producto terminado eliminado correctamente"}
+
 # --- MATERIAL ADICIONAL: PAPELERÍA & MANTENIMIENTO ---
 
 @router.get("/additional-supplies", response_model=List[AdditionalSupplyResponse])

@@ -28,6 +28,24 @@ def create_puc_account(account: PucAccountCreate, db: Session = Depends(get_db))
     db.refresh(db_account)
     return db_account
 
+@router.delete("/puc/{puc_id}")
+def delete_puc_account(puc_id: int, db: Session = Depends(get_db)):
+    account = db.query(PucAccount).filter(PucAccount.id == puc_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Cuenta PUC no encontrada")
+
+    # Validar si tiene asientos contables asociados
+    has_entries = db.query(JournalEntry).filter(JournalEntry.puc_code == account.code).first()
+    if has_entries:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede eliminar la cuenta {account.code} ({account.name}) porque tiene asientos registrados en el Libro Diario."
+        )
+
+    db.delete(account)
+    db.commit()
+    return {"message": "Cuenta PUC eliminada correctamente"}
+
 # --- LIBRO DIARIO ---
 
 @router.get("/journal", response_model=List[JournalEntryResponse])
@@ -72,6 +90,17 @@ def create_journal_entry(entry: JournalEntryCreate, db: Session = Depends(get_db
         db.refresh(r)
 
     return created_records
+
+@router.delete("/journal/{entry_number}")
+def delete_journal_entry(entry_number: int, db: Session = Depends(get_db)):
+    entries = db.query(JournalEntry).filter(JournalEntry.entry_number == entry_number).all()
+    if not entries:
+        raise HTTPException(status_code=404, detail="Asiento contable no encontrado")
+
+    for entry in entries:
+        db.delete(entry)
+    db.commit()
+    return {"message": f"Asiento contable #{entry_number} eliminado correctamente"}
 
 # --- FLUJO DE CAJA ---
 
@@ -150,6 +179,16 @@ def create_cash_flow_record(record: CashFlowRecordCreate, db: Session = Depends(
         db.commit()
 
     return db_record
+
+@router.delete("/cashflow/{record_id}")
+def delete_cash_flow_record(record_id: int, db: Session = Depends(get_db)):
+    record = db.query(CashFlowRecord).filter(CashFlowRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Registro de flujo de caja no encontrado")
+    db.delete(record)
+    db.commit()
+    return {"message": "Registro de flujo de caja eliminado correctamente"}
+
 
 # --- REPORTES FINANCIEROS (P&L Y BALANCE GENERAL) ---
 
