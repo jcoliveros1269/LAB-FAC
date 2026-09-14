@@ -50,6 +50,8 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Databases (descomentar si no deseas subir la base de datos SQLite local)
-# *.db
-# *.sqlite3
+# Databases (evitar conflictos de base de datos local en clientes)
+*.db
+*.sqlite3
+*.db-journal
+*.db.bak

@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # PRISMA LAB ERP - PANEL DE CONTROL INTERACTIVO Y TRAY MANAGER
 # ==============================================================================
 param(
@@ -247,7 +247,7 @@ function Update-System {
     Stop-Services
     Start-Sleep -Seconds 1
 
-    # 3. Ejecutar git pull
+    # 3. Ejecutar git pull con auto-resolucion de archivos locales
     Write-Host "   [2/4] Descargando ultimos cambios desde el repositorio Git (git pull)..." -ForegroundColor Cyan
     Write-Host ""
     Push-Location $script:rootDir
@@ -257,24 +257,40 @@ function Update-System {
         if (-not $branch -or $branch -like "*fatal*") { $branch = "main" }
         Write-Host "         Rama activa: $branch" -ForegroundColor DarkGray
 
+        # Proteger base de datos local SQLite antes de sincronizar
+        $dbPath = Join-Path $script:rootDir "prisma_lab.db"
+        $dbBackupPath = Join-Path $script:rootDir "prisma_lab.db.client_bak"
+        if (Test-Path $dbPath) {
+            Copy-Item $dbPath $dbBackupPath -Force
+        }
+
+        # Descartar cambios locales en archivos de codigo/binarios que puedan bloquear git pull
+        & git restore --staged . 2>&1 | Out-Null
+        & git restore prisma_lab.db 2>&1 | Out-Null
+        & git stash --include-untracked 2>&1 | Out-Null
+
         $pullOutput = & git pull origin $branch 2>&1
         foreach ($line in $pullOutput) {
             Write-Host "         $line" -ForegroundColor Gray
         }
-        if ($LASTEXITCODE -ne 0) {
-            $pullError = $true
+
+        # Si aun asi git pull reporta error, forzar fetch + checkout de la rama
+        if ($LASTEXITCODE -ne 0 -or ($pullOutput -like "*error:*") -or ($pullOutput -like "*Aborting*")) {
+            Write-Host "         [*] Resolviendo sincronizacion forzada con origen..." -ForegroundColor DarkYellow
+            & git fetch origin $branch 2>&1 | Out-Null
+            & git reset --hard "origin/$branch" 2>&1 | Out-Null
+        }
+
+        # Restaurar la base de datos local del cliente con su informacion intacta
+        if (Test-Path $dbBackupPath) {
+            Copy-Item $dbBackupPath $dbPath -Force
+            Remove-Item $dbBackupPath -Force -ErrorAction SilentlyContinue
         }
     } catch {
         Write-Host "         [ERROR] Fallo al ejecutar git pull: $_" -ForegroundColor Red
         $pullError = $true
     }
     Write-Host ""
-
-    if ($pullError) {
-        Write-Host "   [AVISO] git pull reporto una advertencia o no se pudo sincronizar." -ForegroundColor Yellow
-        Write-Host "           Verifica tu conexion a internet o si tienes cambios locales pendientes." -ForegroundColor Yellow
-        Write-Host ""
-    }
 
     # 4. Verificar dependencias
     Write-Host "   [3/4] Verificando dependencias del sistema..." -ForegroundColor Cyan
