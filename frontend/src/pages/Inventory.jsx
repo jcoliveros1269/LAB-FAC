@@ -23,9 +23,7 @@ export default function Inventory() {
   const [productStockFilter, setProductStockFilter] = useState('ALL');
   const [supplyTypeFilter, setSupplyTypeFilter] = useState('ALL');
 
-  // Modal Nuevo Material (Filamento)
-  const [showMaterialModal, setShowMaterialModal] = useState(false);
-  const [newMaterial, setNewMaterial] = useState({
+  const DEFAULT_NEW_MATERIAL = {
     name: '',
     color: 'Blanco',
     material_type: 'PETG',
@@ -34,21 +32,51 @@ export default function Inventory() {
     cost_per_g: 65.0,
     min_stock_alert_g: 200,
     notes: ''
+  };
+
+  // Modal Nuevo Material (Filamento)
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [newMaterial, setNewMaterial] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prisma_lab_draft_new_material');
+      if (saved) return { ...DEFAULT_NEW_MATERIAL, ...JSON.parse(saved) };
+    } catch (e) {}
+    return DEFAULT_NEW_MATERIAL;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('prisma_lab_draft_new_material', JSON.stringify(newMaterial));
+    } catch (e) {}
+  }, [newMaterial]);
 
   // Modal Edición Material
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [editMaterialData, setEditMaterialData] = useState(null);
 
-  // Modal Nuevo Insumo Papelería / Mantenimiento
-  const [showSupplyModal, setShowSupplyModal] = useState(false);
-  const [newSupply, setNewSupply] = useState({
+  const DEFAULT_NEW_SUPPLY = {
     name: '',
     item_type: 'PAPELERIA',
     unit_cost_cop: 1500,
     stock_units: 50,
     notes: ''
+  };
+
+  // Modal Nuevo Insumo Papelería / Mantenimiento
+  const [showSupplyModal, setShowSupplyModal] = useState(false);
+  const [newSupply, setNewSupply] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prisma_lab_draft_new_supply');
+      if (saved) return { ...DEFAULT_NEW_SUPPLY, ...JSON.parse(saved) };
+    } catch (e) {}
+    return DEFAULT_NEW_SUPPLY;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('prisma_lab_draft_new_supply', JSON.stringify(newSupply));
+    } catch (e) {}
+  }, [newSupply]);
 
   // Modal Edición Insumo Papelería / Mantenimiento
   const [editingSupply, setEditingSupply] = useState(null);
@@ -137,16 +165,10 @@ export default function Inventory() {
       await inventoryService.createMaterial(payload);
       toast.success(`Insumo '${newMaterial.name}' registrado exitosamente`);
       setShowMaterialModal(false);
-      setNewMaterial({
-        name: '',
-        color: 'Blanco',
-        material_type: 'PETG',
-        initial_stock_g: 1000,
-        total_cost: 65000,
-        cost_per_g: 65.0,
-        min_stock_alert_g: 200,
-        notes: ''
-      });
+      setNewMaterial(DEFAULT_NEW_MATERIAL);
+      try {
+        localStorage.removeItem('prisma_lab_draft_new_material');
+      } catch (e) {}
       loadInventory();
     } catch (err) {
       toast.error('Error creando material');
@@ -244,7 +266,10 @@ export default function Inventory() {
       await inventoryService.createAdditionalSupply(payload);
       toast.success(`Insumo '${newSupply.name}' registrado exitosamente`);
       setShowSupplyModal(false);
-      setNewSupply({ name: '', item_type: 'PAPELERIA', unit_cost_cop: 1500, stock_units: 50, notes: '' });
+      setNewSupply(DEFAULT_NEW_SUPPLY);
+      try {
+        localStorage.removeItem('prisma_lab_draft_new_supply');
+      } catch (e) {}
       loadInventory();
     } catch (err) {
       toast.error('Error registrando insumo adicional');

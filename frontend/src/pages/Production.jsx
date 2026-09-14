@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box } from 'lucide-react';
+import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { productionService, inventoryService, salesService } from '../services/api';
 
@@ -16,7 +16,25 @@ export default function Production({ setActiveTab }) {
   const [history, setHistory] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [calcResult, setCalcResult] = useState(null);
+
+  // Persistencia de resultado de cálculo
+  const [calcResult, setCalcResult] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prisma_lab_draft_calc_result');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (calcResult) {
+        localStorage.setItem('prisma_lab_draft_calc_result', JSON.stringify(calcResult));
+      } else {
+        localStorage.removeItem('prisma_lab_draft_calc_result');
+      }
+    } catch (e) {}
+  }, [calcResult]);
 
   // Filtros y Búsqueda para el Histórico
   const [historySearch, setHistorySearch] = useState('');
@@ -31,7 +49,7 @@ export default function Production({ setActiveTab }) {
     print_hours: 1.0
   });
 
-  const [formData, setFormData] = useState({
+  const DEFAULT_PROD_FORM = {
     project_code: '',
     project_name: '',
     quantity: 1,
@@ -43,7 +61,27 @@ export default function Production({ setActiveTab }) {
     discount_amount: 0.0,
     additional_expenses: 0.0,
     deduct_from_inventory: false
+  };
+
+  // Formulario de Calculadora 3D con persistencia en localStorage
+  const [formData, setFormData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prisma_lab_draft_calc_form');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_PROD_FORM, ...parsed };
+      }
+    } catch (e) {
+      console.error('Error cargando borrador de producción:', e);
+    }
+    return DEFAULT_PROD_FORM;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('prisma_lab_draft_calc_form', JSON.stringify(formData));
+    } catch (e) {}
+  }, [formData]);
 
   // Obtener tipos únicos de filamento desde el inventario
   const filamentTypes = React.useMemo(() => {
@@ -301,6 +339,29 @@ export default function Production({ setActiveTab }) {
     return matchesSearch && matchesType;
   });
 
+  const resetFormData = () => {
+    setFormData({
+      project_code: '',
+      project_name: '',
+      quantity: 1,
+      print_hours: 1.0,
+      filaments: [
+        { id: Date.now(), type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+      ],
+      discount_percentage: 0.0,
+      discount_amount: 0.0,
+      additional_expenses: 0.0,
+      deduct_from_inventory: false
+    });
+    setCalcResult(null);
+    try {
+      localStorage.removeItem('prisma_lab_draft_calc_form');
+      localStorage.removeItem('prisma_lab_draft_calc_result');
+    } catch (e) {}
+    toast.info('Formulario de cálculo limpiado');
+    loadData();
+  };
+
   return (
     <div className="space-y-4">
       {/* Subtabs */}
@@ -329,7 +390,16 @@ export default function Production({ setActiveTab }) {
       {activeSubtab === 'calculator' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <form onSubmit={handleCalculate} className="lg:col-span-7 bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm space-y-4 text-xs">
-            <h3 className="font-semibold text-[#EAEAEA]">Parámetros del Proyecto de Impresión</h3>
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2">
+              <h3 className="font-semibold text-[#EAEAEA]">Parámetros del Proyecto de Impresión</h3>
+              <button
+                type="button"
+                onClick={resetFormData}
+                className="text-[11px] text-[#A0A0A0] hover:text-[#EAEAEA] flex items-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" strokeWidth={1.5} /> Limpiar
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>

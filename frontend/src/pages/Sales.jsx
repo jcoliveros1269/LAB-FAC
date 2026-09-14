@@ -57,8 +57,7 @@ export default function Sales() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editCustomerData, setEditCustomerData] = useState({ name: '', email: '', phone: '', address: '' });
 
-  // Formulario del Cotizador Estilo Excel
-  const [quoteForm, setQuoteForm] = useState({
+  const DEFAULT_QUOTE_FORM = {
     customer_id: '',
     project_name: '',
     quantity: 1,
@@ -71,7 +70,27 @@ export default function Sales() {
     labor_cost: 0,
     additional_cost: 0,
     observations: ''
+  };
+
+  // Formulario del Cotizador Estilo Excel con persistencia en localStorage
+  const [quoteForm, setQuoteForm] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prisma_lab_draft_quote_form');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_QUOTE_FORM, ...parsed };
+      }
+    } catch (e) {
+      console.error('Error cargando borrador de cotización:', e);
+    }
+    return DEFAULT_QUOTE_FORM;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('prisma_lab_draft_quote_form', JSON.stringify(quoteForm));
+    } catch (e) {}
+  }, [quoteForm]);
 
   // Obtener tipos únicos de filamento desde el inventario
   const filamentTypes = React.useMemo(() => {
@@ -349,19 +368,24 @@ export default function Sales() {
   };
 
   const resetQuoteForm = () => {
-    setQuoteForm({
+    const defaultForm = {
       customer_id: '',
       project_name: '',
       quantity: 1,
       hours: 0,
       minutes: 45,
       filaments: [
-        { id: Date.now(), type: 'PETG', color: 'Blanco', grams: 50.0 }
+        { id: Date.now(), type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
       ],
       include_labor: true,
+      labor_cost: 0,
       additional_cost: 0,
       observations: ''
-    });
+    };
+    setQuoteForm(defaultForm);
+    try {
+      localStorage.removeItem('prisma_lab_draft_quote_form');
+    } catch (e) {}
     toast.info('Formulario limpiado');
   };
 
