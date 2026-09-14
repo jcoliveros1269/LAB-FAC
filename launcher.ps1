@@ -444,13 +444,17 @@ try {
             "5" {
                 Update-System
             }
-            "6" {
+            { $_ -in @("6", "exit", "salir", "q", "x", "0") } {
                 Write-Host ""
                 Write-Host " [!] Deteniendo servidores de Prisma Lab..." -ForegroundColor Yellow
                 Stop-Services
-                Write-Host " [OK] Sistema apagado exitosamente. ¡Hasta luego!" -ForegroundColor Green
-                Start-Sleep -Seconds 1
-                break
+                if ($script:notify) {
+                    $script:notify.Visible = $false
+                    $script:notify.Dispose()
+                }
+                Write-Host " [OK] Sistema apagado exitosamente. Cerrando ventana..." -ForegroundColor Green
+                Start-Sleep -Milliseconds 600
+                [System.Environment]::Exit(0)
             }
             default {
                 Write-Host "   [!] Opción inválida. Por favor ingresa un número del 1 al 6." -ForegroundColor Red

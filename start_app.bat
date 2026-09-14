@@ -234,7 +234,7 @@ echo       [OK] Base de datos local SQLite verificada.
 :: ============================================================================
 cls
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1"
-exit /b 0
+exit
 
 :: ============================================================================
 :: RUTINA DE ACTUALIZACION DIRECTA DESDE GIT
