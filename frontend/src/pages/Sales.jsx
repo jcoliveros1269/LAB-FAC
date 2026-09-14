@@ -280,10 +280,11 @@ export default function Sales() {
     // Mano de obra 1.90% si está activa ("Sí"), 0 si no ("No")
     const laborCost = quoteForm.include_labor ? (directCost * 0.019) : 0;
 
-    const unitCost = directCost + laborCost;
+    const totalBatchCost = directCost + laborCost;
     const marginMultiplier = qty >= 10 ? 2.2 : qty >= 5 ? 2.5 : 2.8;
-    const unitPrice = unitCost * marginMultiplier;
-    const totalPrice = unitPrice * qty;
+    const totalPrice = totalBatchCost * marginMultiplier;
+    const unitCost = totalBatchCost / qty;
+    const unitPrice = totalPrice / qty;
 
     return {
       totalHours: totalHours.toFixed(2),
@@ -293,6 +294,7 @@ export default function Sales() {
       depreciationCost,
       laborCost,
       addCost,
+      totalBatchCost,
       unitCost,
       unitPrice,
       totalPrice
@@ -306,6 +308,7 @@ export default function Sales() {
     }
 
     const totals = calculateQuoteTotals();
+    const qty = parseInt(quoteForm.quantity, 10) || 1;
     const docPrefix = docType === 'FACTURA' ? 'FAC' : 'COT';
     const randomNum = Math.floor(100 + Math.random() * 900);
     const docNumber = `${docPrefix}-${Date.now().toString().slice(-4)}${randomNum}`;
@@ -322,9 +325,9 @@ export default function Sales() {
       items: [
         {
           product_name: quoteForm.project_name,
-          quantity: parseInt(quoteForm.quantity, 10) || 1,
-          unit_grams: totals.totalGrams || 0,
-          print_hours: parseFloat(totals.totalHours),
+          quantity: qty,
+          unit_grams: parseFloat(((totals.totalGrams || 0) / qty).toFixed(2)) || 0,
+          print_hours: parseFloat((parseFloat(totals.totalHours || 0) / qty).toFixed(2)) || 0,
           unit_cost: totals.unitCost,
           unit_price: totals.unitPrice,
           total_price: totals.totalPrice
@@ -956,13 +959,19 @@ export default function Sales() {
                     {quoteForm.include_labor ? `Sí ($${currentTotals.laborCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })})` : 'No ($0)'}
                   </span>
                 </div>
+                {parseInt(quoteForm.quantity, 10) > 1 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#A0A0A0]">Costo Total Lote:</span>
+                    <span className="text-[#EAEAEA]">${currentTotals.totalBatchCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-[#A0A0A0]">Costo Unitario:</span>
-                  <span className="text-[#EAEAEA]">${currentTotals.unitCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })}</span>
+                  <span className="text-[#EAEAEA]">${currentTotals.unitCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                 </div>
                 <div className="flex justify-between border-t border-[#2A2A2A] pt-1">
                   <span className="text-[#A0A0A0]">Precio Unitario:</span>
-                  <span className="text-emerald-400 font-semibold">${currentTotals.unitPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })}</span>
+                  <span className="text-emerald-400 font-semibold">${currentTotals.unitPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                 </div>
               </div>
 
