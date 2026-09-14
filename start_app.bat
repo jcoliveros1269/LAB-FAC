@@ -7,6 +7,17 @@ color 0B
 set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
 
+:: ============================================================================
+:: GESTION DE PARAMETROS (ACTUALIZAR SISTEMA)
+:: ============================================================================
+if /i "%~1"=="update" goto :DO_GIT_UPDATE
+if /i "%~1"=="--update" goto :DO_GIT_UPDATE
+if /i "%~1"=="-u" goto :DO_GIT_UPDATE
+if /i "%~1"=="/update" goto :DO_GIT_UPDATE
+if /i "%~1"=="pull" goto :DO_GIT_UPDATE
+if /i "%~1"=="actualizar" goto :DO_GIT_UPDATE
+
+:START_NORMAL
 echo ===============================================================================
 echo                PRISMA LAB ERP - SISTEMA INTEGRAL 3D
 echo           Verificando Componentes y Preparando el Sistema...
@@ -16,7 +27,7 @@ echo.
 :: ============================================================================
 :: 1. VALIDACION Y AUTO-INSTALACION DE PYTHON
 :: ============================================================================
-echo [1/5] Verificando instalacion de Python...
+echo [1/6] Verificando instalacion de Python...
 
 call :REFRESH_PATH
 call :DETECT_PYTHON
@@ -69,7 +80,7 @@ echo       [OK] Python listo: version %PY_VER%
 :: ============================================================================
 :: 2. VALIDACION Y AUTO-INSTALACION DE NODE.JS Y NPM
 :: ============================================================================
-echo [2/5] Verificando instalacion de Node.js y npm...
+echo [2/6] Verificando instalacion de Node.js y npm...
 
 call :REFRESH_PATH
 call :DETECT_NODE
@@ -120,9 +131,23 @@ for /f "tokens=*" %%v in ('!NPM_CMD! -v') do set NPM_VER=%%v
 echo       [OK] Node.js listo: %NODE_VER% - npm v%NPM_VER%
 
 :: ============================================================================
-:: 3. VALIDACION DE ENTORNO VIRTUAL Y DEPENDENCIAS PYTHON (BACKEND)
+:: 3. VALIDACION DE GIT
 :: ============================================================================
-echo [3/5] Verificando entorno virtual y dependencias del Backend...
+echo [3/6] Verificando instalacion de Git...
+
+where git >nul 2>&1
+if %errorlevel% equ 0 (
+    for /f "tokens=*" %%v in ('git --version 2^>nul') do set GIT_VER=%%v
+    echo       [OK] Git listo: !GIT_VER!
+) else (
+    echo       [AVISO] Git no detectado en el PATH.
+    echo               Para recibir actualizaciones automáticas instala Git: https://git-scm.com/
+)
+
+:: ============================================================================
+:: 4. VALIDACION DE ENTORNO VIRTUAL Y DEPENDENCIAS PYTHON (BACKEND)
+:: ============================================================================
+echo [4/6] Verificando entorno virtual y dependencias del Backend...
 
 set "VENV_DIR=%ROOT_DIR%backend\venv"
 set "VENV_PYTHON=%ROOT_DIR%backend\venv\Scripts\python.exe"
@@ -153,9 +178,9 @@ if not exist "%VENV_UVICORN%" (
 )
 
 :: ============================================================================
-:: 4. VALIDACION DE DEPENDENCIAS DE NODE.JS (FRONTEND)
+:: 5. VALIDACION DE DEPENDENCIAS DE NODE.JS (FRONTEND)
 :: ============================================================================
-echo [4/5] Verificando modulos del Frontend...
+echo [5/6] Verificando modulos del Frontend...
 
 set "FRONTEND_VITE=%ROOT_DIR%frontend\node_modules\vite"
 
@@ -177,9 +202,9 @@ if not exist "%FRONTEND_VITE%" (
 )
 
 :: ============================================================================
-:: 5. VALIDACION DE BASE DE DATOS Y MIGRACION
+:: 6. VALIDACION DE BASE DE DATOS Y MIGRACION
 :: ============================================================================
-echo [5/5] Verificando base de datos del sistema...
+echo [6/6] Verificando base de datos del sistema...
 
 set "DB_FILE=%ROOT_DIR%prisma_lab.db"
 set "BACKEND_DB=%ROOT_DIR%backend\prisma_lab.db"
@@ -210,6 +235,14 @@ echo       [OK] Base de datos local SQLite verificada.
 cls
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1"
 exit /b 0
+
+:: ============================================================================
+:: RUTINA DE ACTUALIZACION DIRECTA DESDE GIT
+:: ============================================================================
+:DO_GIT_UPDATE
+cls
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1" -Update
+exit /b %errorlevel%
 
 :: ============================================================================
 :: FUNCIONES AUXILIARES

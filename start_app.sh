@@ -7,6 +7,28 @@ echo ""
 
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# Manejo de actualización desde Git
+if [ "$1" == "update" ] || [ "$1" == "--update" ] || [ "$1" == "-u" ] || [ "$1" == "actualizar" ]; then
+    echo "======================================================================="
+    echo "       PRISMA LAB ERP - ACTUALIZACIÓN DESDE GIT"
+    echo "======================================================================="
+    git pull origin main
+    if [ -f "$ROOT_DIR/backend/requirements.txt" ] && [ -d "$ROOT_DIR/backend/venv" ]; then
+        echo "[*] Actualizando dependencias de Python..."
+        "$ROOT_DIR/backend/venv/bin/pip" install -r "$ROOT_DIR/backend/requirements.txt" --quiet
+    fi
+    if [ -f "$ROOT_DIR/frontend/package.json" ]; then
+        echo "[*] Actualizando paquetes de Node.js..."
+        (cd "$ROOT_DIR/frontend" && npm install --silent)
+    fi
+    echo ""
+    echo "[OK] ¡Actualización completada exitosamente!"
+    read -p "¿Deseas iniciar Prisma Lab ahora? (s/n) [s]: " start_choice
+    if [ "$start_choice" == "n" ] || [ "$start_choice" == "N" ]; then
+        exit 0
+    fi
+fi
+
 # 1. Verificar Entorno Virtual de Python Backend
 if [ ! -d "$ROOT_DIR/backend/venv" ]; then
     echo "[+] Creando entorno virtual de Python..."

@@ -49,6 +49,15 @@ El script se encargará automáticamente de:
 4. **Panel de Control Interactivo & Bandeja del Sistema (System Tray)**:
    - Panel visual en consola con estado en vivo de FastAPI, React y SQLite.
    - **Opción para ocultar en segundo plano**: Se minimiza a la sección de iconos ocultos (junto al reloj de Windows) con notificaciones y menú contextual (clic derecho / doble clic para restaurar).
+   - **Actualización 1-Clic desde Git (Git Pull)**:
+     - Opción **`[5]`** directa en el menú del Dashboard interactivo.
+     - Clic derecho en el icono de la bandeja del sistema -> *"📥 Actualizar Sistema (Git Pull)"*.
+     - O desde la línea de comandos ejecutando:
+       ```powershell
+       start_app.bat update    # Windows
+       ./start_app.sh update   # Linux / macOS
+       ```
+     - Detiene los servicios de forma limpia, sincroniza con GitHub (`git pull`), actualiza dependencias de Python y Node.js si hubo cambios, y reinicia los servicios automáticamente.
    - Opciones rápidas para abrir en navegador, reiniciar servicios, explorar backups o apagar el sistema limpiamente.
 
 ---
