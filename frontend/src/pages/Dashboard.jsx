@@ -188,25 +188,9 @@ export default function Dashboard({ setActiveTab }) {
   return (
     <div className="space-y-5">
       {/* Banner Minimalista */}
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-sm p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-[#EAEAEA] tracking-tight">Panel General de Operaciones</h2>
-          <p className="text-xs text-[#A0A0A0] mt-0.5">Control de producción 3D, stock e indicadores financieros</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('production')}
-            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-medium text-[#EAEAEA] rounded-sm transition-colors"
-          >
-            Calculadora 3D
-          </button>
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className="px-3 py-1.5 bg-[#101010] hover:bg-[#222222] border border-[#2A2A2A] text-xs font-medium text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm transition-colors"
-          >
-            Inventario
-          </button>
-        </div>
+      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-sm p-5">
+        <h2 className="text-lg font-semibold text-[#EAEAEA] tracking-tight">Panel General de Operaciones</h2>
+        <p className="text-xs text-[#A0A0A0] mt-0.5">Control de producción 3D, stock e indicadores financieros</p>
       </div>
 
       {/* KPI Cards Grid */}
