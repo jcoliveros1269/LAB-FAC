@@ -77,6 +77,9 @@ export const accountingService = {
   getPnlReport: () => api.get('/accounting/reports/pnl'),
   getBalanceReport: () => api.get('/accounting/reports/balance'),
   getMonthlyTrend: () => api.get('/accounting/reports/monthly-trend'),
+  getMonthlyCashFlow: (params) => api.get('/accounting/reports/monthly-cashflow', { params }),
+  getMonthlyPnl: (params) => api.get('/accounting/reports/monthly-pnl', { params }),
+  getBalanceGeneral: (params) => api.get('/accounting/reports/balance-general', { params }),
 };
 
 export default api;

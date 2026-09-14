@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
+import calendar
 
 from app.database import get_db
 from app.models.accounting import PucAccount, JournalEntry, CashFlowRecord
@@ -309,4 +310,483 @@ def get_monthly_financial_trend(db: Session = Depends(get_db)):
         })
 
     return trend_result
+
+
+@router.get("/reports/monthly-cashflow")
+def get_monthly_cash_flow_report(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Estado de Flujo de Efectivo Mensual exacto de acuerdo a la hoja 'Flujo_de_Caja' del Excel:
+    - Recaudación del mes (Ingresos a Caja/Bancos: Débito en cuentas 110000..119999)
+    - Pagos del mes (proveedores, nómina, gastos: Crédito en cuentas 110000..119999)
+    - Flujo neto del mes (Recaudación - Pagos)
+    - Saldo inicial de efectivo (Meses Anteriores: Débito - Crédito acumulado antes del inicio de mes)
+    - Saldo final disponible en caja y bancos (Saldo inicial + Flujo neto)
+    """
+    month_names_es = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
+    short_month_names = {
+        1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr",
+        5: "May", 6: "Jun", 7: "Jul", 8: "Ago",
+        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
+    }
+
+    caja_entries = db.query(JournalEntry).filter(
+        JournalEntry.puc_code >= "110000",
+        JournalEntry.puc_code < "120000"
+    ).all()
+
+    entry_dates = [e.entry_date for e in caja_entries if e.entry_date]
+    years_set = set(d.year for d in entry_dates) if entry_dates else set()
+    years_set.add(datetime.utcnow().year)
+    available_years = sorted(list(years_set))
+
+    target_year = year if year is not None else (available_years[-1] if available_years else datetime.utcnow().year)
+
+    months_with_data = sorted(list(set(
+        e.entry_date.month for e in caja_entries 
+        if e.entry_date and e.entry_date.year == target_year and (e.debit > 0 or e.credit > 0)
+    )))
+
+    if month is not None:
+        target_month = month
+    elif target_year == 2026 and 5 in months_with_data:
+        target_month = 5
+    elif months_with_data:
+        target_month = months_with_data[-1]
+    else:
+        target_month = datetime.utcnow().month
+
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    d_start = datetime(target_year, target_month, 1, 0, 0, 0)
+    d_end = datetime(target_year, target_month, last_day, 23, 59, 59)
+
+    recaudacion_mes = sum(e.debit for e in caja_entries if e.entry_date and d_start <= e.entry_date <= d_end)
+    pagos_mes = sum(e.credit for e in caja_entries if e.entry_date and d_start <= e.entry_date <= d_end)
+    flujo_neto_mes = recaudacion_mes - pagos_mes
+
+    saldo_inicial = sum(e.debit - e.credit for e in caja_entries if e.entry_date and e.entry_date < d_start)
+    saldo_final = saldo_inicial + flujo_neto_mes
+
+    month_movements = []
+    for e in sorted(
+        [e for e in caja_entries if e.entry_date and d_start <= e.entry_date <= d_end],
+        key=lambda x: x.entry_date,
+        reverse=True
+    ):
+        month_movements.append({
+            "id": e.id,
+            "entry_number": e.entry_number,
+            "date": e.entry_date.strftime("%Y-%m-%d"),
+            "description": e.description or "Movimiento de Caja",
+            "puc_code": e.puc_code,
+            "account_name": e.account_name,
+            "income": round(e.debit, 2),
+            "expense": round(e.credit, 2),
+            "type": "INGRESO" if e.debit > 0 else "EGRESO"
+        })
+
+    monthly_evolution = []
+    for m in range(1, 13):
+        m_last_day = calendar.monthrange(target_year, m)[1]
+        m_start = datetime(target_year, m, 1, 0, 0, 0)
+        m_end = datetime(target_year, m, m_last_day, 23, 59, 59)
+
+        m_rec = sum(e.debit for e in caja_entries if e.entry_date and m_start <= e.entry_date <= m_end)
+        m_pag = sum(e.credit for e in caja_entries if e.entry_date and m_start <= e.entry_date <= m_end)
+        m_net = m_rec - m_pag
+        m_s_ini = sum(e.debit - e.credit for e in caja_entries if e.entry_date and e.entry_date < m_start)
+        m_s_fin = m_s_ini + m_net
+
+        monthly_evolution.append({
+            "month": m,
+            "month_name": month_names_es[m],
+            "short_name": short_month_names[m],
+            "recaudacion": round(m_rec, 2),
+            "pagos": round(m_pag, 2),
+            "flujo_neto": round(m_net, 2),
+            "saldo_inicial": round(m_s_ini, 2),
+            "saldo_final": round(m_s_fin, 2),
+            "has_data": (m_rec > 0 or m_pag > 0)
+        })
+
+    return {
+        "year": target_year,
+        "month": target_month,
+        "month_name": month_names_es[target_month],
+        "start_date": f"{target_year}-{target_month:02d}-01",
+        "end_date": f"{target_year}-{target_month:02d}-{last_day:02d}",
+        "recaudacion_mes": round(recaudacion_mes, 2),
+        "pagos_mes": round(pagos_mes, 2),
+        "flujo_neto_mes": round(flujo_neto_mes, 2),
+        "saldo_inicial": round(saldo_inicial, 2),
+        "saldo_final": round(saldo_final, 2),
+        "movements": month_movements,
+        "monthly_evolution": monthly_evolution,
+        "available_years": available_years,
+        "months_with_data": months_with_data
+    }
+
+
+@router.get("/reports/monthly-pnl")
+def get_monthly_pnl_report(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Estado de Resultados Mensual exacto de acuerdo a la hoja 'Panel_GyP' del Excel:
+    - INGRESOS DE EXPLOTACIÓN (Clase 4): Haber - Debe en cuentas 400000..499999
+    - Costos de explotación (menos) (Clase 7): Haber - Debe en cuentas 700000..799999 (valor negativo)
+    - RESULTADO DE EXPLOTACIÓN (UTILIDAD BRUTA): Ingresos + Costos
+    - Gastos de administración y ventas (menos) (Clase 5): Haber - Debe en cuentas 500000..599999 (valor negativo)
+    - UTILIDAD (pérdida) DEL MES: Utilidad Bruta + Gastos
+    - Margen Bruto: IF(Ingresos > 0, ABS(Utilidad Bruta) / Ingresos, 0)
+    - Margen Neto: IF(Ingresos > 0, Utilidad Neta / Ingresos, 0)
+    """
+    month_names_es = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
+    short_month_names = {
+        1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr",
+        5: "May", 6: "Jun", 7: "Jul", 8: "Ago",
+        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
+    }
+
+    all_entries = db.query(JournalEntry).all()
+    entry_dates = [e.entry_date for e in all_entries if e.entry_date]
+    years_set = set(d.year for d in entry_dates) if entry_dates else set()
+    years_set.add(datetime.utcnow().year)
+    available_years = sorted(list(years_set))
+
+    target_year = year if year is not None else (available_years[-1] if available_years else datetime.utcnow().year)
+
+    months_with_data = sorted(list(set(
+        e.entry_date.month for e in all_entries
+        if e.entry_date and e.entry_date.year == target_year and any(
+            str(e.puc_code).startswith(c) for c in ['4', '5', '7']
+        )
+    )))
+
+    if month is not None:
+        target_month = month
+    elif target_year == 2026 and 5 in months_with_data:
+        target_month = 5
+    elif months_with_data:
+        target_month = months_with_data[-1]
+    else:
+        target_month = datetime.utcnow().month
+
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    d_start = datetime(target_year, target_month, 1, 0, 0, 0)
+    d_end = datetime(target_year, target_month, last_day, 23, 59, 59)
+
+    month_entries = [e for e in all_entries if e.entry_date and d_start <= e.entry_date <= d_end]
+
+    # Ingresos Clase 4: Crédito - Débito
+    ingresos_mes = sum((e.credit - e.debit) for e in month_entries if str(e.puc_code).startswith('4'))
+
+    # Costos Clase 7: en Excel fórmula B4 es Haber - Debe (da negativo)
+    costos_mes_excel = sum((e.credit - e.debit) for e in month_entries if str(e.puc_code).startswith('7'))
+    costos_mes = abs(costos_mes_excel)
+
+    # Utilidad Bruta (Resultado de Explotación): B3 + B4
+    utilidad_bruta = ingresos_mes + costos_mes_excel
+
+    # Gastos Clase 5: en Excel fórmula B7 es Haber - Debe (da negativo)
+    gastos_mes_excel = sum((e.credit - e.debit) for e in month_entries if str(e.puc_code).startswith('5'))
+    gastos_mes = abs(gastos_mes_excel)
+
+    # Utilidad (pérdida) del Mes: B5 + B7
+    utilidad_neta = utilidad_bruta + gastos_mes_excel
+
+    # Márgenes de Rentabilidad
+    margen_bruto = (abs(utilidad_bruta) / ingresos_mes * 100) if ingresos_mes > 0 else 0.0
+    margen_neto = (utilidad_neta / ingresos_mes * 100) if ingresos_mes > 0 else 0.0
+
+    # Desglose de Cuentas PUC para el mes
+    def get_class_breakdown(cls_char: str, is_income: bool = False):
+        accts = {}
+        for e in month_entries:
+            if e.puc_code and str(e.puc_code).startswith(cls_char):
+                code = str(e.puc_code)
+                if code not in accts:
+                    accts[code] = {
+                        "puc_code": code,
+                        "account_name": e.account_name,
+                        "debit": 0.0,
+                        "credit": 0.0
+                    }
+                accts[code]["debit"] += e.debit
+                accts[code]["credit"] += e.credit
+
+        breakdown = []
+        for code, item in sorted(accts.items()):
+            net_val = (item["credit"] - item["debit"]) if is_income else (item["debit"] - item["credit"])
+            breakdown.append({
+                "puc_code": code,
+                "account_name": item["account_name"],
+                "debit": round(item["debit"], 2),
+                "credit": round(item["credit"], 2),
+                "net": round(net_val, 2)
+            })
+        return breakdown
+
+    ingresos_breakdown = get_class_breakdown('4', is_income=True)
+    costos_breakdown = get_class_breakdown('7', is_income=False)
+    gastos_breakdown = get_class_breakdown('5', is_income=False)
+
+    # Evolución Anual (12 Meses)
+    monthly_evolution = []
+    for m in range(1, 13):
+        m_last_day = calendar.monthrange(target_year, m)[1]
+        m_start = datetime(target_year, m, 1, 0, 0, 0)
+        m_end = datetime(target_year, m, m_last_day, 23, 59, 59)
+
+        m_entries = [e for e in all_entries if e.entry_date and m_start <= e.entry_date <= m_end]
+        m_ing = sum((e.credit - e.debit) for e in m_entries if str(e.puc_code).startswith('4'))
+        m_cos_excel = sum((e.credit - e.debit) for e in m_entries if str(e.puc_code).startswith('7'))
+        m_cos = abs(m_cos_excel)
+        m_ub = m_ing + m_cos_excel
+
+        m_gas_excel = sum((e.credit - e.debit) for e in m_entries if str(e.puc_code).startswith('5'))
+        m_gas = abs(m_gas_excel)
+        m_un = m_ub + m_gas_excel
+
+        m_mb = (abs(m_ub) / m_ing * 100) if m_ing > 0 else 0.0
+        m_mn = (m_un / m_ing * 100) if m_ing > 0 else 0.0
+
+        monthly_evolution.append({
+            "month": m,
+            "month_name": month_names_es[m],
+            "short_name": short_month_names[m],
+            "ingresos": round(m_ing, 2),
+            "costos": round(m_cos, 2),
+            "costos_excel": round(m_cos_excel, 2),
+            "utilidad_bruta": round(m_ub, 2),
+            "gastos": round(m_gas, 2),
+            "gastos_excel": round(m_gas_excel, 2),
+            "utilidad_neta": round(m_un, 2),
+            "margen_bruto": round(m_mb, 2),
+            "margen_neto": round(m_mn, 2),
+            "is_profitable": m_un >= 0,
+            "has_data": (m_ing > 0 or m_cos > 0 or m_gas > 0)
+        })
+
+    return {
+        "year": target_year,
+        "month": target_month,
+        "month_name": month_names_es[target_month],
+        "start_date": f"{target_year}-{target_month:02d}-01",
+        "end_date": f"{target_year}-{target_month:02d}-{last_day:02d}",
+        "ingresos_mes": round(ingresos_mes, 2),
+        "costos_mes": round(costos_mes, 2),
+        "costos_mes_excel": round(costos_mes_excel, 2),
+        "utilidad_bruta": round(utilidad_bruta, 2),
+        "gastos_mes": round(gastos_mes, 2),
+        "gastos_mes_excel": round(gastos_mes_excel, 2),
+        "utilidad_neta": round(utilidad_neta, 2),
+        "margen_bruto": round(margen_bruto, 2),
+        "margen_neto": round(margen_neto, 2),
+        "is_profitable": utilidad_neta >= 0,
+        "accounts_breakdown": {
+            "ingresos": ingresos_breakdown,
+            "costos": costos_breakdown,
+            "gastos": gastos_breakdown
+        },
+        "monthly_evolution": monthly_evolution,
+        "available_years": available_years,
+        "months_with_data": months_with_data
+    }
+
+
+@router.get("/reports/balance-general")
+def get_balance_general_report(
+    scope: Optional[str] = "excel",
+    db: Session = Depends(get_db)
+):
+    """
+    Balance General (Acumulado Histórico) exacto de acuerdo a la hoja 'Balance_General' del Excel:
+    - ACTIVOS CIRCULANTES: Disponible (11xxxx), Deudores (13xxxx), Inventarios (14xxxx)
+    - ACTIVOS FIJOS: Maquinarias y Equipos (150000..159199), Depreciación (159200..159999)
+    - OTROS ACTIVOS: 160000..199999
+    - TOTAL ACTIVOS: Circulantes + Fijos + Otros
+    - PASIVOS CIRCULANTES: CXP y Proveedores (220000..239999), Impuestos (240000..249999)
+    - PASIVOS LARGO PLAZO: Obligaciones Bancarias (210000..219999)
+    - TOTAL PASIVOS: Circulantes + Largo Plazo
+    - PATRIMONIO: Capital Pagado (310000..319999), Utilidad Histórica (Clase 4 - Clases 5..7)
+    - TOTAL PATRIMONIO: Capital + Utilidad Histórica
+    - TOTAL PASIVOS Y PATRIMONIO: Total Pasivos + Total Patrimonio
+    - DIFERENCIA: Total Activos - Total Pasivos y Patrimonio ($24,609.77 en Excel)
+    """
+    query = db.query(JournalEntry)
+    if scope == "excel":
+        # Las 570 operaciones originales migradas exactamente del Excel Libro_Diario_Mayor
+        entries = query.filter(JournalEntry.id <= 570).all()
+    else:
+        entries = query.all()
+
+    def sum_deb_minus_cred(min_c, max_c):
+        return sum(e.debit - e.credit for e in entries if e.puc_code and min_c <= e.puc_code < max_c)
+
+    def sum_cred_minus_deb(min_c, max_c):
+        return sum(e.credit - e.debit for e in entries if e.puc_code and min_c <= e.puc_code < max_c)
+
+    # 1. ACTIVOS
+    caja_bancos = sum_deb_minus_cred("110000", "120000")
+    deudores = sum_deb_minus_cred("130000", "140000")
+    inventarios = sum_deb_minus_cred("140000", "150000")
+    activos_circulantes = caja_bancos + deudores + inventarios
+
+    maquinaria_equipos = sum_deb_minus_cred("150000", "159200")
+    depreciacion = sum_deb_minus_cred("159200", "160000")
+    activos_fijos = maquinaria_equipos + depreciacion
+
+    otros_activos = sum_deb_minus_cred("160000", "200000")
+    total_activos = activos_circulantes + activos_fijos + otros_activos
+
+    # 2. PASIVOS (Incluye Proveedores, Impuestos y Obligaciones Laborales / Nómina)
+    cxp_proveedores = sum_cred_minus_deb("220000", "240000")
+    impuestos = sum_cred_minus_deb("240000", "250000")
+    obligaciones_laborales = sum_cred_minus_deb("250000", "260000")
+    pasivos_circulantes = cxp_proveedores + impuestos + obligaciones_laborales
+
+    obligaciones_bancarias = sum_cred_minus_deb("210000", "220000")
+    pasivos_largo_plazo = obligaciones_bancarias
+    total_pasivos = pasivos_circulantes + pasivos_largo_plazo
+
+    # 3. PATRIMONIO
+    capital_pagado = sum_cred_minus_deb("310000", "320000")
+    ingresos_totales = sum(e.credit - e.debit for e in entries if e.puc_code and "400000" <= e.puc_code < "500000")
+    gastos_costos_totales = sum(e.debit - e.credit for e in entries if e.puc_code and "500000" <= e.puc_code < "800000")
+    utilidad_historica = ingresos_totales - gastos_costos_totales
+    total_patrimonio = capital_pagado + utilidad_historica
+
+    # 4. TOTAL Y DIFERENCIA (Ecuación Contable Equilibrada)
+    total_pasivos_patrimonio = total_pasivos + total_patrimonio
+    diferencia = round(total_activos - total_pasivos_patrimonio, 2)
+    if abs(diferencia) < 0.01:
+        diferencia = 0.0
+
+    # 5. RATIOS FINANCIEROS
+    liquidez_corriente = (activos_circulantes / pasivos_circulantes) if pasivos_circulantes > 0 else 0.0
+    capital_trabajo = activos_circulantes - pasivos_circulantes
+    endeudamiento = (total_pasivos / total_activos * 100) if total_activos > 0 else 0.0
+    solvencia_patrimonial = (total_patrimonio / total_pasivos) if total_pasivos > 0 else 0.0
+
+    # 6. DESGLOSE DE CUENTAS PUC DE BALANCE
+    def get_accounts_list(min_c, max_c, is_credit_nature=False):
+        accts = {}
+        for e in entries:
+            if e.puc_code and min_c <= e.puc_code < max_c:
+                c = e.puc_code
+                if c not in accts:
+                    accts[c] = {
+                        "puc_code": c,
+                        "account_name": e.account_name,
+                        "debit": 0.0,
+                        "credit": 0.0
+                    }
+                accts[c]["debit"] += e.debit
+                accts[c]["credit"] += e.credit
+
+        result = []
+        for c, d in sorted(accts.items()):
+            saldo = (d["credit"] - d["debit"]) if is_credit_nature else (d["debit"] - d["credit"])
+            result.append({
+                "puc_code": c,
+                "account_name": d["account_name"],
+                "debit": round(d["debit"], 2),
+                "credit": round(d["credit"], 2),
+                "saldo": round(saldo, 2),
+                "net": round(saldo, 2)
+            })
+        return result
+
+    dates = [e.entry_date for e in entries if e.entry_date]
+    as_of_date = max(dates).strftime("%Y-%m-%d") if dates else None
+
+    statement_obj = {
+        "activos": {
+            "circulante": {
+                "disponible": round(caja_bancos, 2),
+                "deudores": round(deudores, 2),
+                "inventarios": round(inventarios, 2),
+                "total": round(activos_circulantes, 2)
+            },
+            "fijos": {
+                "maquinarias_equipos": round(maquinaria_equipos, 2),
+                "depreciacion": round(depreciacion, 2),
+                "total": round(activos_fijos, 2)
+            },
+            "otros": {
+                "total": round(otros_activos, 2)
+            },
+            "total_activos": round(total_activos, 2)
+        },
+        "pasivos": {
+            "circulante": {
+                "cuentas_por_pagar_proveedores": round(cxp_proveedores, 2),
+                "impuestos": round(impuestos, 2),
+                "obligaciones_laborales": round(obligaciones_laborales, 2),
+                "total": round(pasivos_circulantes, 2)
+            },
+            "largo_plazo": {
+                "obligaciones_bancarias": round(obligaciones_bancarias, 2),
+                "total": round(pasivos_largo_plazo, 2)
+            },
+            "total_pasivos": round(total_pasivos, 2)
+        },
+        "patrimonio": {
+            "capital_pagado": round(capital_pagado, 2),
+            "utilidad_historica": round(utilidad_historica, 2),
+            "total_patrimonio": round(total_patrimonio, 2)
+        },
+        "total_pasivo_patrimonio": round(total_pasivos_patrimonio, 2),
+        "diferencia": diferencia,
+        "ecuacion_patrimonial_cuadrada": abs(diferencia) < 0.01,
+        "nota_diferencia": ""
+    }
+
+    puc_breakdown_obj = {
+        "activos": get_accounts_list("100000", "200000", is_credit_nature=False),
+        "pasivos": get_accounts_list("200000", "300000", is_credit_nature=True),
+        "patrimonio": get_accounts_list("300000", "400000", is_credit_nature=True)
+    }
+
+    return {
+        "title": "PRISMA LAB - BALANCE GENERAL (ACUMULADO HISTÓRICO)",
+        "scope": scope,
+        "scope_description": "Corte Histórico Inicial (570 asientos contables)" if scope in ["excel", "historico", "initial"] else "Consolidado en Vivo (todos los asientos registrados)",
+        "as_of_date": as_of_date,
+        "total_journal_entries": len(entries),
+        "statement": statement_obj,
+        "ratios": {
+            "liquidez_corriente": round(liquidez_corriente, 2),
+            "razon_corriente": round(liquidez_corriente, 2),
+            "capital_trabajo": round(capital_trabajo, 2),
+            "capital_de_trabajo": round(capital_trabajo, 2),
+            "endeudamiento": round(endeudamiento, 2),
+            "endeudamiento_porcentaje": round(endeudamiento, 2),
+            "solvencia_patrimonial": round(solvencia_patrimonial, 2)
+        },
+        "puc_breakdown": puc_breakdown_obj,
+        "activos": statement_obj["activos"],
+        "pasivos": statement_obj["pasivos"],
+        "patrimonio": statement_obj["patrimonio"],
+        "total_pasivos_patrimonio": round(total_pasivos_patrimonio, 2),
+        "diferencia": diferencia,
+        "diferencia_explicacion": "",
+        "cuentas_detalle": puc_breakdown_obj
+    }
+
+
 

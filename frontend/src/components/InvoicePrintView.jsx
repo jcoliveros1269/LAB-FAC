@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, Box } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 
 export default function InvoicePrintView({ document, onClose }) {
   if (!document) return null;
@@ -39,10 +39,12 @@ export default function InvoicePrintView({ document, onClose }) {
         {/* Área imprimible en blanco puro */}
         <div className="p-8 sm:p-12 overflow-y-auto bg-white text-slate-900 printable-area space-y-6 font-sans">
           <div className="flex justify-between items-start border-b border-slate-200 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-slate-900 rounded-sm text-white">
-                <Box className="w-6 h-6" strokeWidth={1.5} />
-              </div>
+            <div className="flex items-center gap-3.5">
+              <img 
+                src="/prisma_icon.png" 
+                alt="Prisma Lab" 
+                className="w-14 h-14 object-contain" 
+              />
               <div>
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">PRISMA LAB 3D</h1>
                 <p className="text-xs text-slate-600">Servicios e Impresión 3D Profesional</p>

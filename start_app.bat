@@ -232,17 +232,36 @@ echo       [OK] Base de datos local SQLite verificada.
 :: ============================================================================
 :: INICIAR PANEL DE CONTROL INTERACTIVO (LAUNCHER)
 :: ============================================================================
-cls
+echo.
+echo [OK] Verificaciones completadas. Cargando Panel de Control...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1"
-exit
+set "PS_EXIT_CODE=%errorlevel%"
+if %PS_EXIT_CODE% neq 0 (
+    echo.
+    echo ===============================================================================
+    echo [ERROR] El panel de control finalizo inesperadamente con codigo: %PS_EXIT_CODE%
+    echo Revisa el mensaje de error anterior.
+    echo ===============================================================================
+    pause
+)
+exit /b %PS_EXIT_CODE%
 
 :: ============================================================================
 :: RUTINA DE ACTUALIZACION DIRECTA DESDE GIT
 :: ============================================================================
 :DO_GIT_UPDATE
-cls
+echo.
+echo [*] Iniciando actualizacion de Prisma Lab desde Git...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1" -Update
-exit /b %errorlevel%
+set "PS_EXIT_CODE=%errorlevel%"
+if %PS_EXIT_CODE% neq 0 (
+    echo.
+    echo ===============================================================================
+    echo [ERROR] La actualizacion finalizo con codigo: %PS_EXIT_CODE%
+    echo ===============================================================================
+    pause
+)
+exit /b %PS_EXIT_CODE%
 
 :: ============================================================================
 :: FUNCIONES AUXILIARES

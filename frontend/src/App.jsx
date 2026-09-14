@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import { MobileInstallBanner } from './components/InstallPwaModal';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import Production from './pages/Production';
@@ -78,9 +77,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Install Smart Banner */}
-        <MobileInstallBanner />
-
         <Header activeTitle={titles[activeTab] || 'Prisma Lab ERP'} theme={theme} toggleTheme={toggleTheme} />
 
         <main className="flex-1 p-4 md:p-6 w-full space-y-6">

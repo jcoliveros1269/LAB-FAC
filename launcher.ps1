@@ -5,8 +5,13 @@ param(
     [switch]$Update
 )
 
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Prisma Lab ERP - Panel de Control"
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
+
+try {
+    $Host.UI.RawUI.WindowTitle = "Prisma Lab ERP - Panel de Control"
+} catch {}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -31,7 +36,9 @@ public class Win32 {
 }
 '@
 if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
-    Add-Type -TypeDefinition $win32Code
+    try {
+        Add-Type -TypeDefinition $win32Code -ErrorAction SilentlyContinue
+    } catch {}
 }
 
 $script:rootDir = $PSScriptRoot
@@ -41,18 +48,22 @@ if (-not $script:rootDir) {
 
 # Obtener Handle de la ventana de consola
 function Get-MyConsoleHandle {
-    $title = "Prisma Lab ERP - Panel de Control"
-    $h = [Win32]::FindWindow($null, $title)
-    if ($h -eq [IntPtr]::Zero) {
-        $h = [Win32]::GetConsoleWindow()
-    }
-    if ($h -eq [IntPtr]::Zero) {
-        $proc = [System.Diagnostics.Process]::GetCurrentProcess()
-        if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
-            $h = $proc.MainWindowHandle
+    try {
+        $title = "Prisma Lab ERP - Panel de Control"
+        $h = [Win32]::FindWindow($null, $title)
+        if ($h -eq [IntPtr]::Zero) {
+            $h = [Win32]::GetConsoleWindow()
         }
+        if ($h -eq [IntPtr]::Zero) {
+            $proc = [System.Diagnostics.Process]::GetCurrentProcess()
+            if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
+                $h = $proc.MainWindowHandle
+            }
+        }
+        return $h
+    } catch {
+        return [IntPtr]::Zero
     }
-    return $h
 }
 $script:hwnd = Get-MyConsoleHandle
 
@@ -61,7 +72,9 @@ $script:trayIcon = [System.Drawing.SystemIcons]::Application
 $iconPath = Join-Path $script:rootDir "frontend\public\favicon-32.png"
 if (Test-Path $iconPath) {
     try {
-        $bmp = [System.Drawing.Bitmap]::FromFile($iconPath)
+        $bytes = [System.IO.File]::ReadAllBytes($iconPath)
+        $ms = New-Object System.IO.MemoryStream(,$bytes)
+        $bmp = [System.Drawing.Bitmap]::FromStream($ms)
         $hIcon = $bmp.GetHicon()
         $script:trayIcon = [System.Drawing.Icon]::FromHandle($hIcon)
     } catch {}
@@ -70,18 +83,18 @@ if (Test-Path $iconPath) {
 # Crear el NotifyIcon para la bandeja del sistema (iconos ocultos)
 $script:notify = New-Object System.Windows.Forms.NotifyIcon
 $script:notify.Icon = $script:trayIcon
-$script:notify.Text = "Prisma Lab ERP - En ejecución"
+$script:notify.Text = "Prisma Lab ERP - En ejecucion"
 $script:notify.Visible = $false
 
 # ContextMenu para el icono de la bandeja
 $script:contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
-$menuOpenWeb = $script:contextMenu.Items.Add("🌐 Abrir en Navegador")
-$menuShowConsole = $script:contextMenu.Items.Add("🖥️ Mostrar Panel de Control")
+$menuOpenWeb = $script:contextMenu.Items.Add("Abrir en Navegador")
+$menuShowConsole = $script:contextMenu.Items.Add("Mostrar Panel de Control")
 $script:contextMenu.Items.Add("-") | Out-Null
-$menuRestart = $script:contextMenu.Items.Add("🔄 Reiniciar Servidores")
-$menuUpdate = $script:contextMenu.Items.Add("📥 Actualizar Sistema (Git Pull)")
+$menuRestart = $script:contextMenu.Items.Add("Reiniciar Servidores")
+$menuUpdate = $script:contextMenu.Items.Add("Actualizar Sistema (Git Pull)")
 $script:contextMenu.Items.Add("-") | Out-Null
-$menuExit = $script:contextMenu.Items.Add("🛑 Salir de Prisma Lab")
+$menuExit = $script:contextMenu.Items.Add("Salir de Prisma Lab")
 
 $script:notify.ContextMenuStrip = $script:contextMenu
 
@@ -90,7 +103,7 @@ $script:appContext = $null
 $script:pendingAction = $null
 
 $menuOpenWeb.add_Click({
-    [System.Diagnostics.Process]::Start("http://localhost:3000") | Out-Null
+    try { [System.Diagnostics.Process]::Start("http://localhost:3000") | Out-Null } catch {}
 })
 
 $menuShowConsole.add_Click({
@@ -115,13 +128,17 @@ $script:notify.add_Click({
 })
 
 $menuRestart.add_Click({
-    $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Reiniciando servidores...", [System.Windows.Forms.ToolTipIcon]::Info)
-    Restart-Services
-    $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Servidores reiniciados exitosamente.", [System.Windows.Forms.ToolTipIcon]::Info)
+    try {
+        $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Reiniciando servidores...", [System.Windows.Forms.ToolTipIcon]::Info)
+        Restart-Services
+        $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Servidores reiniciados exitosamente.", [System.Windows.Forms.ToolTipIcon]::Info)
+    } catch {}
 })
 
 $menuUpdate.add_Click({
-    $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Iniciando actualización desde Git...", [System.Windows.Forms.ToolTipIcon]::Info)
+    try {
+        $script:notify.ShowBalloonTip(2000, "Prisma Lab ERP", "Iniciando actualizacion desde Git...", [System.Windows.Forms.ToolTipIcon]::Info)
+    } catch {}
     $script:pendingAction = "update"
     if ($script:appContext) {
         $script:appContext.ExitThread()
@@ -131,8 +148,10 @@ $menuUpdate.add_Click({
 $menuExit.add_Click({
     Stop-Services
     if ($script:notify) {
-        $script:notify.Visible = $false
-        $script:notify.Dispose()
+        try {
+            $script:notify.Visible = $false
+            $script:notify.Dispose()
+        } catch {}
     }
     if ($script:appContext) {
         $script:appContext.ExitThread()
@@ -144,37 +163,8 @@ $menuExit.add_Click({
 $script:backendProc = $null
 $script:frontendProc = $null
 
-function Start-Services {
-    Write-Host " [*] Iniciando servidor Backend (FastAPI)..." -ForegroundColor Cyan
-    $pythonExe = Join-Path $script:rootDir "backend\venv\Scripts\python.exe"
-    $script:backendProc = Start-Process -FilePath $pythonExe `
-        -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" `
-        -WorkingDirectory (Join-Path $script:rootDir "backend") `
-        -WindowStyle Hidden `
-        -PassThru
-
-    Write-Host " [*] Iniciando aplicacion Web Frontend (React Vite)..." -ForegroundColor Cyan
-    $script:frontendProc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c npm run dev" `
-        -WorkingDirectory (Join-Path $script:rootDir "frontend") `
-        -WindowStyle Hidden `
-        -PassThru
-
-    # Esperar conexión
-    Write-Host " [*] Verificando conexion..." -ForegroundColor Cyan
-    $attempts = 0
-    while ($attempts -lt 8) {
-        Start-Sleep -Seconds 1
-        $attempts++
-        try {
-            $req = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue
-            if ($req.StatusCode -eq 200) { break }
-        } catch {}
-    }
-}
-
 function Stop-Services {
-    Write-Host " [*] Deteniendo servidores..." -ForegroundColor Yellow
+    Write-Host " [*] Deteniendo servidores anteriores si existen..." -ForegroundColor Yellow
     if ($script:backendProc -and (-not $script:backendProc.HasExited)) {
         try { Stop-Process -Id $script:backendProc.Id -Force -ErrorAction SilentlyContinue } catch {}
     }
@@ -195,6 +185,37 @@ function Stop-Services {
     } catch {}
 }
 
+function Start-Services {
+    Stop-Services
+
+    Write-Host " [*] Iniciando servidor Backend (FastAPI)..." -ForegroundColor Cyan
+    $pythonExe = Join-Path $script:rootDir "backend\venv\Scripts\python.exe"
+    $script:backendProc = Start-Process -FilePath $pythonExe `
+        -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload" `
+        -WorkingDirectory (Join-Path $script:rootDir "backend") `
+        -WindowStyle Hidden `
+        -PassThru
+
+    Write-Host " [*] Iniciando aplicacion Web Frontend (React Vite)..." -ForegroundColor Cyan
+    $script:frontendProc = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c npm run dev" `
+        -WorkingDirectory (Join-Path $script:rootDir "frontend") `
+        -WindowStyle Hidden `
+        -PassThru
+
+    # Esperar conexión con el backend
+    Write-Host " [*] Verificando conexion con el backend..." -ForegroundColor Cyan
+    $attempts = 0
+    while ($attempts -lt 8) {
+        Start-Sleep -Seconds 1
+        $attempts++
+        try {
+            $req = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue
+            if ($req.StatusCode -eq 200) { break }
+        } catch {}
+    }
+}
+
 function Restart-Services {
     Stop-Services
     Start-Sleep -Seconds 1
@@ -205,16 +226,16 @@ function Update-System {
     Clear-Host
     Write-Host ""
     Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
-    Write-Host "   📥 ACTUALIZACIÓN DE PRISMA LAB ERP DESDE GIT" -ForegroundColor Cyan
+    Write-Host "   ACTUALIZACION DE PRISMA LAB ERP DESDE GIT" -ForegroundColor Cyan
     Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
     Write-Host ""
-    Write-Host "   Sincronizando con el repositorio y descargando los últimos cambios..." -ForegroundColor Gray
+    Write-Host "   Sincronizando con el repositorio y descargando los ultimos cambios..." -ForegroundColor Gray
     Write-Host ""
 
     # 1. Comprobar que git esté instalado
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if (-not $gitCmd) {
-        Write-Host "   [ERROR] Git no está instalado o no se encuentra en el PATH de Windows." -ForegroundColor Red
+        Write-Host "   [ERROR] Git no esta instalado o no se encuentra en el PATH de Windows." -ForegroundColor Red
         Write-Host "   Por favor descarga e instala Git desde: https://git-scm.com/downloads" -ForegroundColor Yellow
         Write-Host ""
         Read-Host "   Presiona [Enter] para volver al Panel de Control..."
@@ -227,7 +248,7 @@ function Update-System {
     Start-Sleep -Seconds 1
 
     # 3. Ejecutar git pull
-    Write-Host "   [2/4] Descargando últimos cambios desde el repositorio Git (git pull)..." -ForegroundColor Cyan
+    Write-Host "   [2/4] Descargando ultimos cambios desde el repositorio Git (git pull)..." -ForegroundColor Cyan
     Write-Host ""
     Push-Location $script:rootDir
     $pullError = $false
@@ -250,8 +271,8 @@ function Update-System {
     Write-Host ""
 
     if ($pullError) {
-        Write-Host "   [AVISO] git pull reportó una advertencia o no se pudo sincronizar." -ForegroundColor Yellow
-        Write-Host "           Verifica tu conexión a internet o si tienes cambios locales pendientes." -ForegroundColor Yellow
+        Write-Host "   [AVISO] git pull reporto una advertencia o no se pudo sincronizar." -ForegroundColor Yellow
+        Write-Host "           Verifica tu conexion a internet o si tienes cambios locales pendientes." -ForegroundColor Yellow
         Write-Host ""
     }
 
@@ -260,13 +281,13 @@ function Update-System {
     $pythonPip = Join-Path $script:rootDir "backend\venv\Scripts\pip.exe"
     $reqFile = Join-Path $script:rootDir "backend\requirements.txt"
     if ((Test-Path $pythonPip) -and (Test-Path $reqFile)) {
-        Write-Host "         [*] Verificando librerías de Python en backend..." -ForegroundColor DarkGray
+        Write-Host "         [*] Verificando librerias de Python en backend..." -ForegroundColor DarkGray
         & $pythonPip install -r $reqFile --quiet 2>&1 | Out-Null
     }
 
     $frontendDir = Join-Path $script:rootDir "frontend"
     if (Test-Path (Join-Path $frontendDir "package.json")) {
-        Write-Host "         [*] Verificando módulos de Node.js en frontend..." -ForegroundColor DarkGray
+        Write-Host "         [*] Verificando modulos de Node.js en frontend..." -ForegroundColor DarkGray
         Push-Location $frontendDir
         cmd /c "npm install --silent" 2>&1 | Out-Null
         Pop-Location
@@ -279,18 +300,20 @@ function Update-System {
 
     Write-Host ""
     Write-Host "  ==============================================================================" -ForegroundColor Green
-    Write-Host "   ✅ ¡PRISMA LAB ERP HA SIDO ACTUALIZADO EXITOSAMENTE!" -ForegroundColor Green
+    Write-Host "   PRISMA LAB ERP HA SIDO ACTUALIZADO EXITOSAMENTE" -ForegroundColor Green
     Write-Host "  ==============================================================================" -ForegroundColor Green
     Write-Host ""
 
     $lastCommit = & git log -1 --oneline 2>&1
-    Write-Host "   Versión actual instalada: $lastCommit" -ForegroundColor White
+    Write-Host "   Version actual instalada: $lastCommit" -ForegroundColor White
     Write-Host ""
 
     Pop-Location
 
     if ($script:notify) {
-        $script:notify.ShowBalloonTip(3500, "Prisma Lab ERP", "Actualización completada: $lastCommit", [System.Windows.Forms.ToolTipIcon]::Info)
+        try {
+            $script:notify.ShowBalloonTip(3500, "Prisma Lab ERP", "Actualizacion completada: $lastCommit", [System.Windows.Forms.ToolTipIcon]::Info)
+        } catch {}
     }
 
     Write-Host "   Presiona [Enter] para volver al Panel de Control..." -ForegroundColor Yellow
@@ -301,13 +324,12 @@ function Show-Dashboard {
     Clear-Host
     Write-Host ""
     Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
-    Write-Host "    ██████╗ ██████╗ ██╗███████╗███╗   ███╗ █████╗     ██╗      █████╗ ██████╗   " -ForegroundColor Cyan
-    Write-Host "    ██╔══██╗██╔══██╗██║██╔════╝████╗ ████║██╔══██╗    ██║     ██╔══██╗██╔══██╗  " -ForegroundColor Cyan
-    Write-Host "    ██████╔╝██████╔╝██║███████╗██╔████╔██║███████║    ██║     ███████║██████╔╝  " -ForegroundColor White
-    Write-Host "    ██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║██╔══██║    ██║     ██╔══██║██╔══██╗  " -ForegroundColor White
-    Write-Host "    ██║     ██║  ██║██║███████║██║ ╚═╝ ██║██║  ██║    ███████╗██║  ██║██████╔╝  " -ForegroundColor Cyan
-    Write-Host "    ╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝    ╚══════╝╚═╝  ╚═╝╚═════╝   " -ForegroundColor DarkCyan
-    Write-Host "                     SISTEMA INTEGRAL DE PRODUCCIÓN Y ERP 3D                   " -ForegroundColor Yellow
+    Write-Host "    ____  ____  ___ ____  __  __    _       _        _    ____  " -ForegroundColor Cyan
+    Write-Host "   |  _ \|  _ \|_ _/ ___||  \/  |  / \     | |      / \  | __ ) " -ForegroundColor Cyan
+    Write-Host "   | |_) | |_) || |\___ \| |\/| | / _ \    | |     / _ \ |  _ \ " -ForegroundColor White
+    Write-Host "   |  __/|  _ < | | ___) | |  | |/ ___ \   | |___ / ___ \| |_) |" -ForegroundColor White
+    Write-Host "   |_|   |_| \_\___|____/|_|  |_/_/   \_\  |_____/_/   \_\____/ " -ForegroundColor Cyan
+    Write-Host "                     SISTEMA INTEGRAL DE PRODUCCION Y ERP 3D                   " -ForegroundColor Yellow
     Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
     Write-Host ""
 
@@ -318,41 +340,53 @@ function Show-Dashboard {
         if ($check.StatusCode -eq 200) { $backendOk = $true }
     } catch {}
 
+    $frontendOk = $false
+    try {
+        $checkFront = Invoke-WebRequest -Uri "http://localhost:3000" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue
+        if ($checkFront.StatusCode -eq 200) { $frontendOk = $true }
+    } catch {}
+
     Write-Host "  [ESTADO DEL SISTEMA]" -ForegroundColor White
     if ($backendOk) {
-        Write-Host "   ● Backend API (FastAPI):  " -NoNewline
-        Write-Host " [ EN LÍNEA ] " -ForegroundColor Black -BackgroundColor Green -NoNewline
+        Write-Host "   * Backend API (FastAPI):  " -NoNewline
+        Write-Host " [ EN LINEA ] " -ForegroundColor Black -BackgroundColor Green -NoNewline
         Write-Host " http://localhost:8000" -ForegroundColor Gray
     } else {
-        Write-Host "   ● Backend API (FastAPI):  " -NoNewline
+        Write-Host "   * Backend API (FastAPI):  " -NoNewline
         Write-Host " [ DETENIDO ] " -ForegroundColor White -BackgroundColor Red
     }
 
-    Write-Host "   ● Aplicación Web (React): " -NoNewline
-    Write-Host " [ EN LÍNEA ] " -ForegroundColor Black -BackgroundColor Green -NoNewline
-    Write-Host " http://localhost:3000" -ForegroundColor Gray
+    if ($frontendOk) {
+        Write-Host "   * Aplicacion Web (React): " -NoNewline
+        Write-Host " [ EN LINEA ] " -ForegroundColor Black -BackgroundColor Green -NoNewline
+        Write-Host " http://localhost:3000" -ForegroundColor Gray
+    } else {
+        Write-Host "   * Aplicacion Web (React): " -NoNewline
+        Write-Host " [ INICIANDO ] " -ForegroundColor White -BackgroundColor Yellow -NoNewline
+        Write-Host " http://localhost:3000" -ForegroundColor Gray
+    }
 
-    Write-Host "   ● Base de Datos Local:    " -NoNewline
+    Write-Host "   * Base de Datos Local:    " -NoNewline
     Write-Host " [ CONECTADA ]" -ForegroundColor Black -BackgroundColor Green -NoNewline
     Write-Host " prisma_lab.db (SQLite)" -ForegroundColor Gray
     Write-Host ""
 
-    Write-Host "  ──────────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
-    Write-Host "   ¿QUÉ DESEAS HACER?" -ForegroundColor Yellow
-    Write-Host "  ──────────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host "   QUE DESEAS HACER?" -ForegroundColor Yellow
+    Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host "   [1] " -NoNewline -ForegroundColor Cyan
-    Write-Host "🌐 Abrir Prisma Lab en el Navegador" -ForegroundColor White
+    Write-Host "Abrir Prisma Lab en el Navegador (http://localhost:3000)" -ForegroundColor White
     Write-Host "   [2] " -NoNewline -ForegroundColor Cyan
-    Write-Host "🫥 Ocultar esta ventana a los Iconos Ocultos (Bandeja del Sistema)" -ForegroundColor Green
+    Write-Host "Ocultar esta ventana a los Iconos Ocultos (Bandeja del Sistema)" -ForegroundColor Green
     Write-Host "   [3] " -NoNewline -ForegroundColor Cyan
-    Write-Host "🔄 Reiniciar Servidores" -ForegroundColor White
+    Write-Host "Reiniciar Servidores" -ForegroundColor White
     Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
-    Write-Host "📂 Abrir Carpeta del Proyecto y Copias de Seguridad" -ForegroundColor White
+    Write-Host "Abrir Carpeta del Proyecto y Copias de Seguridad" -ForegroundColor White
     Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
-    Write-Host "📥 Actualizar Sistema desde Git (Git Pull - Descargar Última Versión)" -ForegroundColor Cyan
+    Write-Host "Actualizar Sistema desde Git (Git Pull - Descargar Ultima Version)" -ForegroundColor Cyan
     Write-Host "   [6] " -NoNewline -ForegroundColor Cyan
-    Write-Host "🛑 Detener Todo y Salir" -ForegroundColor Red
-    Write-Host "  ──────────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "Detener Todo y Salir" -ForegroundColor Red
+    Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -366,20 +400,22 @@ function Hide-To-Tray {
     Write-Host "   El sistema Prisma Lab ERP sigue funcionando normalmente en segundo plano." -ForegroundColor Gray
     Write-Host ""
     Write-Host "   Para volver a abrir este panel o ver las opciones:" -ForegroundColor Yellow
-    Write-Host "   👉 Busca el icono de Prisma Lab en la barra de tareas (flecha ^ de iconos ocultos)." -ForegroundColor Cyan
-    Write-Host "   👉 Haz doble clic en el icono para restaurar la ventana en cualquier momento." -ForegroundColor Cyan
+    Write-Host "   -> Busca el icono de Prisma Lab en la barra de tareas (flecha ^ de iconos ocultos)." -ForegroundColor Cyan
+    Write-Host "   -> Haz doble clic en el icono para restaurar la ventana en cualquier momento." -ForegroundColor Cyan
     Write-Host ""
     Start-Sleep -Milliseconds 1200
 
     # Ocultar ventana de consola
     $script:hwnd = Get-MyConsoleHandle
     if ($script:hwnd -ne [IntPtr]::Zero) {
-        [Win32]::ShowWindow($script:hwnd, 0) | Out-Null
+        try { [Win32]::ShowWindow($script:hwnd, 0) | Out-Null } catch {}
     }
 
     # Mostrar icono en la bandeja
     $script:notify.Visible = $true
-    $script:notify.ShowBalloonTip(3500, "Prisma Lab ERP", "El sistema sigue activo en segundo plano. Haz clic en el icono para volver al panel o acceder a las opciones.", [System.Windows.Forms.ToolTipIcon]::Info)
+    try {
+        $script:notify.ShowBalloonTip(3500, "Prisma Lab ERP", "El sistema sigue activo en segundo plano. Haz doble clic en el icono para volver al panel.", [System.Windows.Forms.ToolTipIcon]::Info)
+    } catch {}
 
     # Iniciar Message Loop de Windows Forms mientras esta oculta
     $script:appContext = New-Object System.Windows.Forms.ApplicationContext
@@ -388,8 +424,10 @@ function Hide-To-Tray {
     # Al salir del loop (cuando se hace clic en restaurar):
     $script:notify.Visible = $false
     if ($script:hwnd -ne [IntPtr]::Zero) {
-        [Win32]::ShowWindow($script:hwnd, 5) | Out-Null
-        [Win32]::SetForegroundWindow($script:hwnd) | Out-Null
+        try {
+            [Win32]::ShowWindow($script:hwnd, 5) | Out-Null
+            [Win32]::SetForegroundWindow($script:hwnd) | Out-Null
+        } catch {}
     }
 }
 
@@ -401,8 +439,8 @@ try {
     if ($Update) {
         Update-System
         Write-Host ""
-        $startAnswer = Read-Host "   ¿Deseas abrir el Panel de Prisma Lab ahora mismo? (S/N) [S]"
-        if ($startAnswer.Trim().ToUpper() -eq "N") {
+        $startAnswer = Read-Host "   Deseas abrir el Panel de Prisma Lab ahora mismo? (S/N) [S]"
+        if ($startAnswer -and ($startAnswer.Trim().ToUpper() -eq "N")) {
             Stop-Services
             exit 0
         }
@@ -411,7 +449,11 @@ try {
         Start-Services
 
         # 2. Abrir navegador automaticamente la primera vez
-        Start-Process "http://localhost:3000" | Out-Null
+        try {
+            Start-Process "http://localhost:3000" | Out-Null
+        } catch {
+            Write-Host " [!] Abre tu navegador en: http://localhost:3000" -ForegroundColor Yellow
+        }
     }
 
     # 3. Bucle interactivo del Panel de Control
@@ -423,11 +465,16 @@ try {
         }
 
         Show-Dashboard
-        $choice = Read-Host "   Elige una opción (1-6)"
+        $rawChoice = Read-Host "   Elige una opcion (1-6)"
+        $choice = if ($rawChoice) { $rawChoice.Trim() } else { "" }
 
-        switch ($choice.Trim()) {
+        switch ($choice) {
             "1" {
-                Start-Process "http://localhost:3000" | Out-Null
+                try {
+                    Start-Process "http://localhost:3000" | Out-Null
+                } catch {
+                    Write-Host " [!] Abre tu navegador en: http://localhost:3000" -ForegroundColor Yellow
+                }
             }
             "2" {
                 Hide-To-Tray
@@ -439,7 +486,9 @@ try {
                 Start-Sleep -Seconds 1
             }
             "4" {
-                Start-Process "explorer.exe" $script:rootDir | Out-Null
+                try {
+                    Start-Process "explorer.exe" $script:rootDir | Out-Null
+                } catch {}
             }
             "5" {
                 Update-System
@@ -449,23 +498,39 @@ try {
                 Write-Host " [!] Deteniendo servidores de Prisma Lab..." -ForegroundColor Yellow
                 Stop-Services
                 if ($script:notify) {
-                    $script:notify.Visible = $false
-                    $script:notify.Dispose()
+                    try {
+                        $script:notify.Visible = $false
+                        $script:notify.Dispose()
+                    } catch {}
                 }
-                Write-Host " [OK] Sistema apagado exitosamente. Cerrando ventana..." -ForegroundColor Green
+                Write-Host " [OK] Sistema apagado exitosamente. Cerrando..." -ForegroundColor Green
                 Start-Sleep -Milliseconds 600
                 [System.Environment]::Exit(0)
             }
             default {
-                Write-Host "   [!] Opción inválida. Por favor ingresa un número del 1 al 6." -ForegroundColor Red
+                Write-Host "   [!] Opcion no valida. Por favor ingresa un numero del 1 al 6." -ForegroundColor Red
                 Start-Sleep -Milliseconds 800
             }
         }
     }
+} catch {
+    Write-Host ""
+    Write-Host " ==============================================================================" -ForegroundColor Red
+    Write-Host " [ERROR FATAL EN PANEL DE CONTROL]" -ForegroundColor Red
+    Write-Host " Detalle: $_" -ForegroundColor Yellow
+    if ($_.InvocationInfo) {
+        Write-Host " Linea: $($_.InvocationInfo.ScriptLineNumber)" -ForegroundColor DarkYellow
+    }
+    Write-Host " ==============================================================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host " Presiona [Enter] para continuar..." -ForegroundColor Gray
+    Read-Host | Out-Null
 } finally {
     Stop-Services
     if ($script:notify) {
-        $script:notify.Visible = $false
-        $script:notify.Dispose()
+        try {
+            $script:notify.Visible = $false
+            $script:notify.Dispose()
+        } catch {}
     }
 }
