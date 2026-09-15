@@ -19,7 +19,9 @@ import {
   Save,
   Filter,
   Wrench,
-  Box
+  Box,
+  Layers,
+  Copy
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
@@ -57,14 +59,31 @@ export default function Sales() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editCustomerData, setEditCustomerData] = useState({ name: '', email: '', phone: '', address: '' });
 
-  const DEFAULT_QUOTE_FORM = {
-    customer_id: '',
-    project_name: '',
+  const createDefaultPlate = (num = 1) => ({
+    id: Date.now() + Math.random(),
+    name: `Placa ${num}`,
     quantity: 1,
     hours: 0,
     minutes: 45,
     filaments: [
-      { id: 1, type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+      { id: Date.now() + Math.random(), type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+    ]
+  });
+
+  const DEFAULT_QUOTE_FORM = {
+    customer_id: '',
+    project_name: '',
+    plates: [
+      {
+        id: 1,
+        name: 'Placa 1',
+        quantity: 1,
+        hours: 0,
+        minutes: 45,
+        filaments: [
+          { id: 1, type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+        ]
+      }
     ],
     include_labor: true, // Siempre seleccionado por defecto (1.90%)
     labor_cost: 0,
@@ -78,6 +97,21 @@ export default function Sales() {
       const saved = localStorage.getItem('prisma_lab_draft_quote_form');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Migración automática para datos guardados con la versión previa de placa única
+        if (!parsed.plates || !Array.isArray(parsed.plates) || parsed.plates.length === 0) {
+          parsed.plates = [
+            {
+              id: 1,
+              name: parsed.project_name || 'Placa 1',
+              quantity: parsed.quantity || 1,
+              hours: parsed.hours ?? 0,
+              minutes: parsed.minutes ?? 45,
+              filaments: parsed.filaments && parsed.filaments.length > 0 ? parsed.filaments : [
+                { id: 1, type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+              ]
+            }
+          ];
+        }
         return { ...DEFAULT_QUOTE_FORM, ...parsed };
       }
     } catch (e) {
@@ -126,48 +160,133 @@ export default function Sales() {
     return mat ? mat.cost_per_g : 65.0;
   };
 
-  const handleAddFilament = () => {
+  // Manejo de Placas Dinámicas
+  const handleAddPlate = () => {
+    setQuoteForm(prev => {
+      const nextNum = (prev.plates || []).length + 1;
+      const newPlate = {
+        id: Date.now() + Math.random(),
+        name: `Placa ${nextNum}`,
+        quantity: 1,
+        hours: 0,
+        minutes: 45,
+        filaments: [
+          { id: Date.now() + Math.random(), type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+        ]
+      };
+      return {
+        ...prev,
+        plates: [...(prev.plates || []), newPlate]
+      };
+    });
+    toast.success('Nueva placa agregada a la cotización');
+  };
+
+  const handleDuplicatePlate = (plateId) => {
+    setQuoteForm(prev => {
+      const target = (prev.plates || []).find(p => p.id === plateId);
+      if (!target) return prev;
+      const nextNum = (prev.plates || []).length + 1;
+      const duplicated = {
+        ...target,
+        id: Date.now() + Math.random(),
+        name: `${target.name} (Copia)`,
+        filaments: (target.filaments || []).map(f => ({ ...f, id: Date.now() + Math.random() }))
+      };
+      return {
+        ...prev,
+        plates: [...(prev.plates || []), duplicated]
+      };
+    });
+    toast.success('Placa duplicada exitosamente');
+  };
+
+  const handleRemovePlate = (plateId) => {
+    if ((quoteForm.plates || []).length <= 1) {
+      toast.warning('Debe haber al menos una placa en la cotización');
+      return;
+    }
+    setQuoteForm(prev => ({
+      ...prev,
+      plates: (prev.plates || []).filter(p => p.id !== plateId)
+    }));
+    toast.info('Placa eliminada');
+  };
+
+  const handlePlateChange = (plateId, field, value) => {
+    setQuoteForm(prev => ({
+      ...prev,
+      plates: (prev.plates || []).map(p => p.id === plateId ? { ...p, [field]: value } : p)
+    }));
+  };
+
+  // Manejo de Filamentos por Placa
+  const handleAddFilamentToPlate = (plateId) => {
     const defaultType = 'PLA';
     const colors = getColorsForType(defaultType);
     const defaultColor = colors.length > 0 ? colors[0].color : 'Negro';
     setQuoteForm(prev => ({
       ...prev,
-      filaments: [
-        ...prev.filaments,
-        { id: Date.now(), type: defaultType, color: defaultColor, grams: 0.0, isCustomColor: false }
-      ]
+      plates: (prev.plates || []).map(p => {
+        if (p.id !== plateId) return p;
+        return {
+          ...p,
+          filaments: [
+            ...(p.filaments || []),
+            { id: Date.now() + Math.random(), type: defaultType, color: defaultColor, grams: 0.0, isCustomColor: false }
+          ]
+        };
+      })
     }));
   };
 
-  const handleRemoveFilament = (id) => {
-    if (quoteForm.filaments.length <= 1) {
-      toast.warning('Debe haber al menos un filamento en la cotización');
-      return;
-    }
+  const handleRemoveFilamentFromPlate = (plateId, filId) => {
     setQuoteForm(prev => ({
       ...prev,
-      filaments: prev.filaments.filter(f => f.id !== id)
+      plates: (prev.plates || []).map(p => {
+        if (p.id !== plateId) return p;
+        if ((p.filaments || []).length <= 1) {
+          toast.warning('Debe haber al menos un filamento en la placa');
+          return p;
+        }
+        return {
+          ...p,
+          filaments: (p.filaments || []).filter(f => f.id !== filId)
+        };
+      })
     }));
   };
 
-  const handleFilamentTypeChange = (id, newType) => {
+  const handleFilamentTypeChangeInPlate = (plateId, filId, newType) => {
     const colors = getColorsForType(newType);
     const firstColor = colors.length > 0 ? colors[0].color : 'Blanco';
     setQuoteForm(prev => ({
       ...prev,
-      filaments: prev.filaments.map(f => f.id === id ? { 
-        ...f, 
-        type: newType, 
-        color: firstColor,
-        isCustomColor: false
-      } : f)
+      plates: (prev.plates || []).map(p => {
+        if (p.id !== plateId) return p;
+        return {
+          ...p,
+          filaments: (p.filaments || []).map(f => f.id === filId ? {
+            ...f,
+            type: newType,
+            color: firstColor,
+            isCustomColor: false
+          } : f)
+        };
+      })
     }));
   };
 
-  const handleFilamentChange = (id, field, value) => {
+  const handleFilamentChangeInPlate = (plateId, filId, field, value) => {
     setQuoteForm(prev => ({
       ...prev,
-      filaments: prev.filaments.map(f => f.id === id ? { ...f, [field]: value } : f)
+      plates: (prev.plates || []).map(p => {
+        if (p.id !== plateId) return p;
+        return {
+          ...p,
+          filaments: (p.filaments || []).map(f => f.id === filId ? { ...f, [field]: value } : f)
+        };
+      })
     }));
   };
 
@@ -269,68 +388,127 @@ export default function Sales() {
     }
   };
 
-  // Cálculo en tiempo real para el Cotizador Estilo Excel
+  // Cálculo en tiempo real para el Cotizador Multi-Placa Estilo Excel
   const calculateQuoteTotals = () => {
-    const totalHours = (parseFloat(quoteForm.hours) || 0) + ((parseFloat(quoteForm.minutes) || 0) / 60);
-    const qty = parseInt(quoteForm.quantity, 10) || 1;
+    const plates = quoteForm.plates && quoteForm.plates.length > 0 ? quoteForm.plates : [createDefaultPlate(1)];
 
-    // Calcular costo y gramos totales de la lista dinámica de filamentos
-    let matCost = 0;
-    let totalGrams = 0;
+    // 1. Calcular costos directos base por cada placa
+    const platesCalculations = plates.map((p, idx) => {
+      const pHours = (parseFloat(p.hours) || 0) + ((parseFloat(p.minutes) || 0) / 60);
+      const pQty = parseInt(p.quantity, 10) || 1;
 
-    (quoteForm.filaments || []).forEach(fil => {
-      const grams = parseFloat(fil.grams) || 0;
-      if (fil.type && grams > 0) {
-        totalGrams += grams;
-        const mat = materials.find(m => 
-          m.material_type.toUpperCase() === fil.type.toUpperCase() &&
-          (!fil.color || m.color.toLowerCase().includes(fil.color.toLowerCase()))
-        );
-        const costPerG = mat ? mat.cost_per_g : 65.0;
-        matCost += grams * costPerG;
-      }
+      let pGrams = 0;
+      let pMatCost = 0;
+
+      (p.filaments || []).forEach(fil => {
+        const grams = parseFloat(fil.grams) || 0;
+        if (fil.type && grams > 0) {
+          pGrams += grams;
+          const costPerG = getFilamentCost(fil.type, fil.color);
+          pMatCost += grams * costPerG;
+        }
+      });
+
+      const pEnergyCost = pHours * 0.15 * 763.2; // kWh
+      const pDeprecCost = pHours * 678.0;         // Depreciación impresora
+      const pDirectCost = pMatCost + pEnergyCost + pDeprecCost;
+
+      return {
+        id: p.id,
+        name: p.name || `Placa ${idx + 1}`,
+        pQty,
+        pHours,
+        pGrams,
+        pMatCost,
+        pEnergyCost,
+        pDeprecCost,
+        pDirectCost
+      };
     });
 
-    const energyCost = totalHours * 0.15 * 763.2; // kWh
-    const depreciationCost = totalHours * 678.0;  // Depreciación impresora
-    const addCost = (parseFloat(quoteForm.additional_cost) || 0);
+    const totalPlatesBaseDirect = platesCalculations.reduce((acc, p) => acc + p.pDirectCost, 0);
+    const totalHours = platesCalculations.reduce((acc, p) => acc + p.pHours, 0);
+    const totalGrams = platesCalculations.reduce((acc, p) => acc + p.pGrams, 0);
+    const totalUnits = platesCalculations.reduce((acc, p) => acc + p.pQty, 0);
+    const addCost = parseFloat(quoteForm.additional_cost) || 0;
 
-    const directCost = matCost + energyCost + depreciationCost + addCost;
+    const directCost = totalPlatesBaseDirect + addCost;
     // Mano de obra 1.90% si está activa ("Sí"), 0 si no ("No")
     const laborCost = quoteForm.include_labor ? (directCost * 0.019) : 0;
-
     const totalBatchCost = directCost + laborCost;
-    const marginMultiplier = qty >= 10 ? 2.2 : qty >= 5 ? 2.5 : 2.8;
-    const totalPrice = totalBatchCost * marginMultiplier;
-    const unitCost = totalBatchCost / qty;
-    const unitPrice = totalPrice / qty;
+
+    // 2. Distribuir costos adicionales, mano de obra y márgenes por placa
+    const platesResult = platesCalculations.map((p) => {
+      const weight = totalPlatesBaseDirect > 0 ? (p.pDirectCost / totalPlatesBaseDirect) : (1 / platesCalculations.length);
+      const plateAddCost = addCost * weight;
+      const plateDirectWithAdd = p.pDirectCost + plateAddCost;
+      const plateLaborCost = quoteForm.include_labor ? (plateDirectWithAdd * 0.019) : 0;
+      const plateTotalCost = plateDirectWithAdd + plateLaborCost;
+      const plateUnitCost = plateTotalCost / p.pQty;
+
+      // Margen según volumen de la placa (o total)
+      const plateMarginMult = p.pQty >= 10 ? 2.2 : p.pQty >= 5 ? 2.5 : 2.8;
+      const plateTotalPrice = plateTotalCost * plateMarginMult;
+      const plateUnitPrice = plateTotalPrice / p.pQty;
+
+      return {
+        ...p,
+        weight,
+        plateAddCost,
+        plateLaborCost,
+        plateTotalCost,
+        plateUnitCost,
+        plateMarginMult,
+        plateUnitPrice,
+        plateTotalPrice
+      };
+    });
+
+    const totalPrice = platesResult.reduce((acc, p) => acc + p.plateTotalPrice, 0);
+    const unitCost = totalUnits > 0 ? totalBatchCost / totalUnits : 0;
+    const unitPrice = totalUnits > 0 ? totalPrice / totalUnits : 0;
 
     return {
       totalHours: totalHours.toFixed(2),
       totalGrams,
-      matCost,
-      energyCost,
-      depreciationCost,
-      laborCost,
+      totalUnits,
+      matCost: platesCalculations.reduce((acc, p) => acc + p.pMatCost, 0),
+      energyCost: platesCalculations.reduce((acc, p) => acc + p.pEnergyCost, 0),
+      depreciationCost: platesCalculations.reduce((acc, p) => acc + p.pDeprecCost, 0),
       addCost,
+      laborCost,
       totalBatchCost,
       unitCost,
       unitPrice,
-      totalPrice
+      totalPrice,
+      plates: platesResult
     };
   };
 
   const handleGenerateQuoteOrInvoice = async (docType) => {
-    if (!quoteForm.project_name.trim()) {
-      toast.error('Por favor ingresa el nombre de la pieza o proyecto.');
-      return;
-    }
+    const plates = quoteForm.plates && quoteForm.plates.length > 0 ? quoteForm.plates : [createDefaultPlate(1)];
 
     const totals = calculateQuoteTotals();
-    const qty = parseInt(quoteForm.quantity, 10) || 1;
     const docPrefix = docType === 'FACTURA' ? 'FAC' : 'COT';
     const randomNum = Math.floor(100 + Math.random() * 900);
     const docNumber = `${docPrefix}-${Date.now().toString().slice(-4)}${randomNum}`;
+
+    const items = totals.plates.map((p, idx) => {
+      let itemName = p.name ? p.name.trim() : `Placa ${idx + 1}`;
+      if (quoteForm.project_name && quoteForm.project_name.trim()) {
+        const proj = quoteForm.project_name.trim();
+        itemName = plates.length > 1 ? `${proj} - ${itemName}` : proj;
+      }
+      return {
+        product_name: itemName,
+        quantity: p.pQty,
+        unit_grams: parseFloat((p.pGrams / p.pQty).toFixed(2)) || 0,
+        print_hours: parseFloat((p.pHours / p.pQty).toFixed(2)) || 0,
+        unit_cost: p.plateUnitCost,
+        unit_price: p.plateUnitPrice,
+        total_price: p.plateTotalPrice
+      };
+    });
 
     const payload = {
       doc_number: docNumber,
@@ -341,22 +519,12 @@ export default function Sales() {
       tax: 0.0,
       total: totals.totalPrice,
       status: docType === 'FACTURA' ? 'INVOICED' : 'QUOTED',
-      items: [
-        {
-          product_name: quoteForm.project_name,
-          quantity: qty,
-          unit_grams: parseFloat(((totals.totalGrams || 0) / qty).toFixed(2)) || 0,
-          print_hours: parseFloat((parseFloat(totals.totalHours || 0) / qty).toFixed(2)) || 0,
-          unit_cost: totals.unitCost,
-          unit_price: totals.unitPrice,
-          total_price: totals.totalPrice
-        }
-      ]
+      items
     };
 
     try {
       const res = await salesService.createDocument(payload);
-      toast.success(`${docType === 'FACTURA' ? 'Factura' : 'Cotización'} ${docNumber} generada`);
+      toast.success(`${docType === 'FACTURA' ? 'Factura' : 'Cotización'} ${docNumber} generada (${items.length} ${items.length === 1 ? 'ítem' : 'ítems'})`);
       loadSalesData();
       if (res.data) {
         setSelectedDocForPrint(res.data);
@@ -371,12 +539,7 @@ export default function Sales() {
     const defaultForm = {
       customer_id: '',
       project_name: '',
-      quantity: 1,
-      hours: 0,
-      minutes: 45,
-      filaments: [
-        { id: Date.now(), type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
-      ],
+      plates: [createDefaultPlate(1)],
       include_labor: true,
       labor_cost: 0,
       additional_cost: 0,
@@ -647,220 +810,328 @@ export default function Sales() {
               </button>
             </div>
 
-            {/* Selección de Cliente */}
-            <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="font-semibold text-[#A0A0A0]">Cliente Asignado</label>
-                <button
-                  type="button"
-                  onClick={() => setShowCustomerModal(true)}
-                  className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
+            {/* Selección de Cliente y Nombre General del Proyecto */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-[#A0A0A0]">Cliente Asignado</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerModal(true)}
+                    className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Registrar Nuevo Cliente
+                  </button>
+                </div>
+
+                <select
+                  value={quoteForm.customer_id}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, customer_id: e.target.value })}
+                  className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
                 >
-                  <Plus className="w-3 h-3" /> Registrar Nuevo Cliente
-                </button>
+                  <option value="">Cliente General (Sin asociar)</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.email ? `(${c.email})` : ''} {c.phone ? `- ${c.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <select
-                value={quoteForm.customer_id}
-                onChange={(e) => setQuoteForm({ ...quoteForm, customer_id: e.target.value })}
-                className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
-              >
-                <option value="">Cliente General (Sin asociar)</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.email ? `(${c.email})` : ''} {c.phone ? `- ${c.phone}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Datos del Proyecto */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[#A0A0A0] mb-1">Nombre Pieza / Trabajo</label>
+              <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
+                <label className="block font-semibold text-[#A0A0A0]">Nombre del Proyecto / Trabajo (General)</label>
                 <input
                   type="text"
-                  required
-                  placeholder="PRUEBA TEMPERATURA / SOPORTE"
+                  placeholder="Ej: SOPORTE BRAZO ROBÓTICO / PROTOTIPO 3D"
                   value={quoteForm.project_name}
                   onChange={(e) => setQuoteForm({ ...quoteForm, project_name: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#A0A0A0] mb-1">Cantidad Unidades</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={quoteForm.quantity}
-                  onChange={(e) => setQuoteForm({ ...quoteForm, quantity: e.target.value })}
-                  onBlur={() => {
-                    const parsed = parseInt(quoteForm.quantity, 10);
-                    if (isNaN(parsed) || parsed < 1) setQuoteForm({ ...quoteForm, quantity: 1 });
-                    else setQuoteForm({ ...quoteForm, quantity: parsed });
-                  }}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono"
+                  className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
                 />
               </div>
             </div>
 
-            {/* Tiempo de Impresión (Horas y Minutos) */}
-            <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
-              <span className="text-[11px] font-semibold text-[#A0A0A0]">Tiempo de Impresión</span>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] text-[#666666]">Horas (H)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={quoteForm.hours}
-                    onChange={(e) => setQuoteForm({ ...quoteForm, hours: e.target.value })}
-                    onBlur={() => {
-                      const parsed = parseInt(quoteForm.hours, 10);
-                      if (isNaN(parsed) || parsed < 0) setQuoteForm({ ...quoteForm, hours: 0 });
-                      else setQuoteForm({ ...quoteForm, hours: parsed });
-                    }}
-                    className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1 rounded-sm font-mono focus:border-slate-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-[#666666]">Minutos (Min)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={quoteForm.minutes}
-                    onChange={(e) => setQuoteForm({ ...quoteForm, minutes: e.target.value })}
-                    onBlur={() => {
-                      const parsed = parseInt(quoteForm.minutes, 10);
-                      if (isNaN(parsed) || parsed < 0) setQuoteForm({ ...quoteForm, minutes: 0 });
-                      else setQuoteForm({ ...quoteForm, minutes: Math.min(59, parsed) });
-                    }}
-                    className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1 rounded-sm font-mono focus:border-slate-500"
-                  />
-                </div>
+            {/* Header de Placas con Botón Agregar Placa */}
+            <div className="flex items-center justify-between bg-[#151515] p-3 rounded-sm border border-[#2A2A2A]">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span className="font-semibold text-[#EAEAEA]">
+                  Placas / Bandejas de Impresión ({quoteForm.plates?.length || 1})
+                </span>
+                <span className="text-[10px] text-[#A0A0A0] bg-[#1A1A1A] px-2 py-0.5 rounded border border-[#2A2A2A]">
+                  Total: {currentTotals.totalUnits} {currentTotals.totalUnits === 1 ? 'unidad' : 'unidades'} • {currentTotals.totalHours}h
+                </span>
               </div>
+              <button
+                type="button"
+                onClick={handleAddPlate}
+                className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" /> Agregar Otra Placa
+              </button>
             </div>
 
-            {/* Filamentos Dinámicos */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-[#A0A0A0]">Filamentos Utilizados</span>
-                <button
-                  type="button"
-                  onClick={handleAddFilament}
-                  className="px-2.5 py-1 bg-[#101010] hover:bg-[#222222] text-emerald-400 border border-[#2A2A2A] rounded-sm text-[11px] font-medium flex items-center gap-1 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Agregar Filamento
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {(quoteForm.filaments || []).map((fil, idx) => {
-                  const colorsForType = getColorsForType(fil.type);
-                  const unitCost = getFilamentCost(fil.type, fil.color);
-                  const subtotalCost = unitCost * (parseFloat(fil.grams) || 0);
-
-                  return (
-                    <div key={fil.id || idx} className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2 relative">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-slate-300">
-                            Filamento {idx + 1}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#1A1A1A] border border-[#2A2A2A] text-emerald-400 font-mono font-medium">
-                            ${unitCost.toFixed(2)}/g
-                          </span>
-                        </div>
-                        {quoteForm.filaments.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFilament(fil.id)}
-                            className="text-[#666666] hover:text-rose-400 p-0.5 transition-colors"
-                            title="Eliminar filamento"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+            {/* Listado de Placas */}
+            <div className="space-y-4">
+              {(quoteForm.plates || []).map((plate, pIdx) => {
+                const pCalc = currentTotals.plates?.find(cp => cp.id === plate.id) || currentTotals.plates?.[pIdx];
+                return (
+                  <div 
+                    key={plate.id || pIdx} 
+                    className="bg-[#121212] border border-[#2A2A2A] rounded-sm p-4 space-y-3.5 relative transition-all hover:border-[#383838]"
+                  >
+                    {/* Cabecera de la Placa */}
+                    <div className="flex items-center justify-between border-b border-[#222222] pb-2.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs font-bold font-mono">
+                          Placa {pIdx + 1}
+                        </span>
+                        {pCalc && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#A0A0A0]">
+                            <span className="bg-[#1A1A1A] px-1.5 py-0.5 rounded border border-[#2A2A2A]">
+                              {plate.quantity || 1} und
+                            </span>
+                            <span className="bg-[#1A1A1A] px-1.5 py-0.5 rounded border border-[#2A2A2A]">
+                              {pCalc.pHours.toFixed(2)}h
+                            </span>
+                            <span className="bg-[#1A1A1A] px-1.5 py-0.5 rounded border border-[#2A2A2A]">
+                              {pCalc.pGrams.toFixed(1)}g
+                            </span>
+                            <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20 font-semibold">
+                              ${pCalc.plateTotalPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
+                            </span>
+                          </div>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[10px] text-[#666666]">Tipo</label>
-                          <select
-                            value={fil.type}
-                            onChange={(e) => handleFilamentTypeChange(fil.id, e.target.value)}
-                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500"
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicatePlate(plate.id)}
+                          className="px-2 py-1 bg-[#1A1A1A] hover:bg-[#252525] text-slate-300 hover:text-white rounded text-[11px] border border-[#2A2A2A] flex items-center gap-1 transition-colors"
+                          title="Duplicar esta placa con sus parámetros y filamentos"
+                        >
+                          <Copy className="w-3 h-3" /> Duplicar
+                        </button>
+                        {(quoteForm.plates || []).length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePlate(plate.id)}
+                            className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded border border-rose-500/20 transition-colors"
+                            title="Eliminar esta placa"
                           >
-                            {filamentTypes.map(t => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <label className="block text-[10px] text-[#666666]">Color</label>
-                            {colorsForType.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => handleFilamentChange(fil.id, 'isCustomColor', !fil.isCustomColor)}
-                                className="text-[9px] text-slate-400 hover:text-emerald-400 underline"
-                              >
-                                {fil.isCustomColor ? 'Lista' : 'Otro'}
-                              </button>
-                            )}
-                          </div>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                          {fil.isCustomColor || colorsForType.length === 0 ? (
-                            <input
-                              type="text"
-                              placeholder="Color..."
-                              value={fil.color}
-                              onChange={(e) => handleFilamentChange(fil.id, 'color', e.target.value)}
-                              className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500"
-                            />
-                          ) : (
-                            <select
-                              value={fil.color}
-                              onChange={(e) => handleFilamentChange(fil.id, 'color', e.target.value)}
-                              className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500"
-                            >
-                              {colorsForType.map((c, i) => (
-                                <option key={i} value={c.color}>
-                                  {c.color} (${c.cost_per_g.toFixed(2)}/g)
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
+                    {/* Datos de la Placa: Nombre y Cantidad */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-[11px] text-[#A0A0A0] mb-1">
+                          Nombre Pieza / Placa <span className="text-slate-500">(ej: Base Soporte, Tapa, etc.)</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={`Placa ${pIdx + 1}`}
+                          value={plate.name}
+                          onChange={(e) => handlePlateChange(plate.id, 'name', e.target.value)}
+                          className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-[#A0A0A0] mb-1">Cantidad Unidades</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={plate.quantity}
+                          onChange={(e) => handlePlateChange(plate.id, 'quantity', e.target.value)}
+                          onBlur={() => {
+                            const parsed = parseInt(plate.quantity, 10);
+                            if (isNaN(parsed) || parsed < 1) handlePlateChange(plate.id, 'quantity', 1);
+                            else handlePlateChange(plate.id, 'quantity', parsed);
+                          }}
+                          className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Tiempo de Impresión de la Placa */}
+                    <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-[#A0A0A0]">Tiempo de Impresión</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {pCalc ? `${pCalc.pHours.toFixed(2)} horas estimadas` : ''}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] text-[#666666]">Gramos (g)</label>
+                          <label className="block text-[10px] text-[#666666]">Horas (H)</label>
                           <input
                             type="number"
-                            step="0.1"
-                            value={fil.grams}
-                            onChange={(e) => handleFilamentChange(fil.id, 'grams', e.target.value)}
+                            min="0"
+                            value={plate.hours}
+                            onChange={(e) => handlePlateChange(plate.id, 'hours', e.target.value)}
                             onBlur={() => {
-                              const parsed = parseFloat(fil.grams);
-                              if (isNaN(parsed) || parsed < 0) handleFilamentChange(fil.id, 'grams', 0.0);
-                              else handleFilamentChange(fil.id, 'grams', parsed);
+                              const parsed = parseInt(plate.hours, 10);
+                              if (isNaN(parsed) || parsed < 0) handlePlateChange(plate.id, 'hours', 0);
+                              else handlePlateChange(plate.id, 'hours', parsed);
                             }}
-                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm font-mono focus:border-slate-500"
+                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1 rounded-sm font-mono focus:border-slate-500 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-[#666666]">Minutos (Min)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={plate.minutes}
+                            onChange={(e) => handlePlateChange(plate.id, 'minutes', e.target.value)}
+                            onBlur={() => {
+                              const parsed = parseInt(plate.minutes, 10);
+                              if (isNaN(parsed) || parsed < 0) handlePlateChange(plate.id, 'minutes', 0);
+                              else handlePlateChange(plate.id, 'minutes', Math.min(59, parsed));
+                            }}
+                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1 rounded-sm font-mono focus:border-slate-500 text-xs"
                           />
                         </div>
                       </div>
+                    </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-[#777777] pt-1 border-t border-[#1F1F1F]">
-                        <span>Costo estimado material:</span>
-                        <span className="font-mono font-medium text-[#EAEAEA]">
-                          ${subtotalCost.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
-                        </span>
+                    {/* Filamentos Utilizados en esta Placa */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-[#A0A0A0]">Filamentos Utilizados en Placa {pIdx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleAddFilamentToPlate(plate.id)}
+                          className="px-2 py-0.5 bg-[#1A1A1A] hover:bg-[#222222] text-emerald-400 border border-[#2A2A2A] rounded-sm text-[10px] font-medium flex items-center gap-1 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" /> Agregar Filamento
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {(plate.filaments || []).map((fil, filIdx) => {
+                          const colorsForType = getColorsForType(fil.type);
+                          const unitCost = getFilamentCost(fil.type, fil.color);
+                          const subtotalCost = unitCost * (parseFloat(fil.grams) || 0);
+
+                          return (
+                            <div key={fil.id || filIdx} className="p-2.5 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2 relative">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-semibold text-slate-300">
+                                    Filamento {filIdx + 1}
+                                  </span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#1A1A1A] border border-[#2A2A2A] text-emerald-400 font-mono font-medium">
+                                    ${unitCost.toFixed(2)}/g
+                                  </span>
+                                </div>
+                                {(plate.filaments || []).length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFilamentFromPlate(plate.id, fil.id)}
+                                    className="text-[#666666] hover:text-rose-400 p-0.5 transition-colors"
+                                    title="Eliminar filamento"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <label className="block text-[9px] text-[#666666]">Tipo</label>
+                                  <select
+                                    value={fil.type}
+                                    onChange={(e) => handleFilamentTypeChangeInPlate(plate.id, fil.id, e.target.value)}
+                                    className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500 text-[11px]"
+                                  >
+                                    {filamentTypes.map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <label className="block text-[9px] text-[#666666]">Color</label>
+                                    {colorsForType.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleFilamentChangeInPlate(plate.id, fil.id, 'isCustomColor', !fil.isCustomColor)}
+                                        className="text-[8px] text-slate-400 hover:text-emerald-400 underline"
+                                      >
+                                        {fil.isCustomColor ? 'Lista' : 'Otro'}
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {fil.isCustomColor || colorsForType.length === 0 ? (
+                                    <input
+                                      type="text"
+                                      placeholder="Color..."
+                                      value={fil.color}
+                                      onChange={(e) => handleFilamentChangeInPlate(plate.id, fil.id, 'color', e.target.value)}
+                                      className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500 text-[11px]"
+                                    />
+                                  ) : (
+                                    <select
+                                      value={fil.color}
+                                      onChange={(e) => handleFilamentChangeInPlate(plate.id, fil.id, 'color', e.target.value)}
+                                      className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500 text-[11px]"
+                                    >
+                                      {colorsForType.map((c, i) => (
+                                        <option key={i} value={c.color}>
+                                          {c.color} (${c.cost_per_g.toFixed(2)}/g)
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] text-[#666666]">Gramos (g)</label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={fil.grams}
+                                    onChange={(e) => handleFilamentChangeInPlate(plate.id, fil.id, 'grams', e.target.value)}
+                                    onBlur={() => {
+                                      const parsed = parseFloat(fil.grams);
+                                      if (isNaN(parsed) || parsed < 0) handleFilamentChangeInPlate(plate.id, fil.id, 'grams', 0.0);
+                                      else handleFilamentChangeInPlate(plate.id, fil.id, 'grams', parsed);
+                                    }}
+                                    className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm font-mono focus:border-slate-500 text-[11px]"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[9px] text-[#777777] pt-1 border-t border-[#1F1F1F]">
+                                <span>Costo material placa:</span>
+                                <span className="font-mono font-medium text-[#EAEAEA]">
+                                  ${subtotalCost.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
+
+              {/* Botón inferior para agregar placa */}
+              <button
+                type="button"
+                onClick={handleAddPlate}
+                className="w-full py-2.5 bg-[#121212] hover:bg-[#1C1C1C] border border-dashed border-[#2A2A2A] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 rounded-sm text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Agregar Otra Placa (Placa {(quoteForm.plates?.length || 0) + 1})
+              </button>
             </div>
 
             {/* Mano de Obra (Check 1.90% Sí / No) & Costos Adicionales */}
@@ -978,29 +1249,61 @@ export default function Sales() {
                   <span className="text-[#EAEAEA]">{currentTotals.totalHours} Horas</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-[#A0A0A0]">Material Total:</span>
+                  <span className="text-[#EAEAEA]">{currentTotals.totalGrams.toFixed(1)} g</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#A0A0A0]">Total Placas / Ítems:</span>
+                  <span className="text-[#EAEAEA]">{currentTotals.plates?.length || 1} ({currentTotals.totalUnits} unds)</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-[#A0A0A0]">Mano de Obra (1.90%):</span>
                   <span className={quoteForm.include_labor ? 'text-emerald-400 font-semibold' : 'text-zinc-500'}>
                     {quoteForm.include_labor ? `Sí ($${currentTotals.laborCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })})` : 'No ($0)'}
                   </span>
                 </div>
-                {parseInt(quoteForm.quantity, 10) > 1 && (
+                {currentTotals.totalUnits > 1 && (
                   <div className="flex justify-between">
                     <span className="text-[#A0A0A0]">Costo Total Lote:</span>
                     <span className="text-[#EAEAEA]">${currentTotals.totalBatchCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-[#A0A0A0]">Costo Unitario:</span>
+                  <span className="text-[#A0A0A0]">Costo Promedio Unitario:</span>
                   <span className="text-[#EAEAEA]">${currentTotals.unitCost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                 </div>
                 <div className="flex justify-between border-t border-[#2A2A2A] pt-1">
-                  <span className="text-[#A0A0A0]">Precio Unitario:</span>
+                  <span className="text-[#A0A0A0]">Precio Promedio Unitario:</span>
                   <span className="text-emerald-400 font-semibold">${currentTotals.unitPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                 </div>
+
+                {/* Desglose por Placa si hay más de 1 placa */}
+                {currentTotals.plates && currentTotals.plates.length > 1 && (
+                  <div className="pt-2 border-t border-[#2A2A2A] space-y-1.5 font-sans">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      Desglose por Placa:
+                    </span>
+                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                      {currentTotals.plates.map((p, idx) => (
+                        <div key={p.id || idx} className="flex justify-between items-center bg-[#161616] p-1.5 rounded border border-[#262626] text-[11px]">
+                          <div className="truncate max-w-[140px]">
+                            <span className="font-semibold text-slate-200">{p.name}</span>
+                            <span className="text-[10px] text-slate-400 ml-1">({p.pQty} und • {p.pHours.toFixed(1)}h)</span>
+                          </div>
+                          <span className="font-mono text-emerald-400 font-semibold">
+                            ${p.plateTotalPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 bg-[#101010] border border-[#2A2A2A] rounded-sm mt-3 space-y-1 text-center">
-                <span className="text-[10px] text-emerald-400 uppercase font-medium">TOTAL A COTIZAR ({quoteForm.quantity} und)</span>
+                <span className="text-[10px] text-emerald-400 uppercase font-medium">
+                  TOTAL A COTIZAR ({currentTotals.totalUnits} {currentTotals.totalUnits === 1 ? 'und' : 'unds'} en {currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'placa' : 'placas'})
+                </span>
                 <p className="text-2xl font-bold text-emerald-400 font-mono">
                   ${currentTotals.totalPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
                 </p>
@@ -1014,7 +1317,7 @@ export default function Sales() {
                 className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 transition-colors"
               >
                 <FileText className="w-4 h-4" strokeWidth={1.5} />
-                <span>Generar Cotización</span>
+                <span>Generar Cotización ({currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'Placa' : 'Placas'})</span>
               </button>
 
               <button
@@ -1023,7 +1326,7 @@ export default function Sales() {
                 className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 transition-colors"
               >
                 <CheckCircle2 className="w-4 h-4" strokeWidth={1.5} />
-                <span>Generar Factura Directa</span>
+                <span>Generar Factura Directa ({currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'Placa' : 'Placas'})</span>
               </button>
             </div>
           </div>
