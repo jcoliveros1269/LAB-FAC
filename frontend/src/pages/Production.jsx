@@ -286,7 +286,9 @@ export default function Production({ setActiveTab }) {
       const totalPrice = calcResult.sale_price_override && calcResult.sale_price_override > 0
         ? calcResult.sale_price_override
         : calcResult.suggested_price_margin;
-      const unitPrice = totalPrice / qty;
+      const discountVal = parseFloat(calcResult.discount_amount) || 0.0;
+      const subtotalVal = totalPrice + discountVal;
+      const unitPrice = subtotalVal / qty;
       const unitCost = calcResult.total_unit_cost / qty;
       const unitGrams = parseFloat(((calcResult.total_grams || 0) / qty).toFixed(2));
       const unitHours = parseFloat(((calcResult.print_hours || 0) / qty).toFixed(2));
@@ -294,8 +296,8 @@ export default function Production({ setActiveTab }) {
       const docPayload = {
         doc_number: `COT-${calcResult.project_code}`,
         doc_type: 'COTIZACION',
-        subtotal: totalPrice,
-        discount: 0.0,
+        subtotal: subtotalVal,
+        discount: discountVal,
         tax: 0.0,
         total: totalPrice,
         status: 'QUOTED',
@@ -307,7 +309,7 @@ export default function Production({ setActiveTab }) {
             print_hours: unitHours,
             unit_cost: unitCost,
             unit_price: unitPrice,
-            total_price: totalPrice
+            total_price: subtotalVal
           }
         ]
       };

@@ -21,7 +21,8 @@ import {
   Wrench,
   Box,
   Layers,
-  Copy
+  Copy,
+  Percent
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
@@ -91,6 +92,8 @@ export default function Sales() {
     include_labor: true, // Siempre seleccionado por defecto (1.90%)
     labor_cost: 0,
     additional_cost: 0,
+    discount_percentage: 0,
+    discount_amount: 0,
     observations: ''
   };
 
@@ -467,7 +470,13 @@ export default function Sales() {
       };
     });
 
-    const totalPrice = platesResult.reduce((acc, p) => acc + p.plateTotalPrice, 0);
+    const subtotal = platesResult.reduce((acc, p) => acc + p.plateTotalPrice, 0);
+    const discPct = parseFloat(quoteForm.discount_percentage) || 0;
+    let discAmt = parseFloat(quoteForm.discount_amount) || 0;
+    if (discPct > 0) {
+      discAmt = (subtotal * discPct) / 100;
+    }
+    const totalPrice = Math.max(0, subtotal - discAmt);
     const unitCost = totalUnits > 0 ? totalBatchCost / totalUnits : 0;
     const unitPrice = totalUnits > 0 ? totalPrice / totalUnits : 0;
 
@@ -483,6 +492,9 @@ export default function Sales() {
       totalBatchCost,
       unitCost,
       unitPrice,
+      subtotal,
+      discountPercentage: discPct,
+      discountAmount: discAmt,
       totalPrice,
       plates: platesResult
     };
@@ -517,8 +529,8 @@ export default function Sales() {
       doc_number: docNumber,
       doc_type: docType,
       customer_id: quoteForm.customer_id ? parseInt(quoteForm.customer_id, 10) : null,
-      subtotal: totals.totalPrice,
-      discount: 0.0,
+      subtotal: totals.subtotal,
+      discount: totals.discountAmount,
       tax: 0.0,
       total: totals.totalPrice,
       status: docType === 'FACTURA' ? 'INVOICED' : 'QUOTED',
@@ -546,6 +558,8 @@ export default function Sales() {
       include_labor: true,
       labor_cost: 0,
       additional_cost: 0,
+      discount_percentage: 0,
+      discount_amount: 0,
       observations: ''
     };
     setQuoteForm(defaultForm);
@@ -749,6 +763,7 @@ export default function Sales() {
                       <th className="py-2.5 px-3 font-semibold">Tipo</th>
                       <th className="py-2.5 px-3 font-semibold">Cliente</th>
                       <th className="py-2.5 px-3 font-semibold text-right">Subtotal</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">Descuento</th>
                       <th className="py-2.5 px-3 font-semibold text-right">Total</th>
                       <th className="py-2.5 px-3 font-semibold text-center">Estado</th>
                       <th className="py-2.5 px-3 font-semibold text-center">Acciones</th>
@@ -770,6 +785,15 @@ export default function Sales() {
                           {doc.customer ? doc.customer.name : 'Cliente General'}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-[#A0A0A0]">${doc.subtotal.toLocaleString('es-CO')}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          {Number(doc.discount) > 0 ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono font-semibold" title={`Descuento aplicado: -$${Number(doc.discount).toLocaleString('es-CO')}`}>
+                              -${Number(doc.discount).toLocaleString('es-CO')}
+                            </span>
+                          ) : (
+                            <span className="text-[#555555] font-mono">-</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-400">${doc.total.toLocaleString('es-CO')} COP</td>
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 text-[10px] rounded-sm font-medium ${
@@ -1246,6 +1270,80 @@ export default function Sales() {
               </div>
             </div>
 
+            {/* Descuento Comercial (Opcional) */}
+            <div className="bg-[#101010] p-3.5 rounded-sm border border-[#2A2A2A] space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-[#EAEAEA] flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5 text-amber-400" /> Descuento Comercial (Opcional)
+                </label>
+                {(parseFloat(quoteForm.discount_percentage) > 0 || parseFloat(quoteForm.discount_amount) > 0) && (
+                  <span className="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-semibold">
+                    Desc. Activo: -${currentTotals.discountAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })} COP
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] text-[#A0A0A0] mb-1">Descuento (%)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      placeholder="0"
+                      value={quoteForm.discount_percentage || ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setQuoteForm(prev => ({ ...prev, discount_percentage: val, discount_amount: 0 }));
+                      }}
+                      className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] pl-2 pr-6 py-1.5 rounded-sm font-mono focus:border-slate-500 text-xs"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[#666666] text-xs font-mono">%</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-[#A0A0A0] mb-1">Descuento ($ COP)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      placeholder="0"
+                      value={quoteForm.discount_amount || ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setQuoteForm(prev => ({ ...prev, discount_amount: val, discount_percentage: 0 }));
+                      }}
+                      className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] pl-5 pr-2 py-1.5 rounded-sm font-mono focus:border-slate-500 text-xs"
+                    />
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#666666] text-xs font-mono">$</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Descuento Rápido */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-[#1F1F1F]">
+                <span className="text-[10px] text-[#666666]">Acceso rápido:</span>
+                {[0, 5, 10, 15, 20, 25].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setQuoteForm(prev => ({ ...prev, discount_percentage: pct, discount_amount: 0 }))}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                      parseFloat(quoteForm.discount_percentage) === pct && !parseFloat(quoteForm.discount_amount)
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold'
+                        : 'bg-[#1A1A1A] text-[#A0A0A0] border border-[#2A2A2A] hover:text-[#EAEAEA]'
+                    }`}
+                  >
+                    {pct === 0 ? 'Sin desc.' : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="block text-[#A0A0A0] mb-1">Observaciones / Uso Interno</label>
               <textarea
@@ -1318,6 +1416,22 @@ export default function Sales() {
                     </div>
                   </div>
                 )}
+
+                <div className="flex justify-between border-t border-[#2A2A2A] pt-1">
+                  <span className="text-[#A0A0A0]">Subtotal:</span>
+                  <span className="text-[#EAEAEA] font-semibold">${currentTotals.subtotal.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
+                </div>
+
+                {currentTotals.discountAmount > 0 && (
+                  <div className="flex justify-between text-amber-400">
+                    <span className="flex items-center gap-1">
+                      <Percent className="w-3 h-3 text-amber-400" /> Descuento ({currentTotals.discountPercentage > 0 ? `${currentTotals.discountPercentage}%` : 'Monto'}):
+                    </span>
+                    <span className="font-bold font-mono">
+                      -${currentTotals.discountAmount.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 bg-[#101010] border border-[#2A2A2A] rounded-sm mt-3 space-y-1 text-center">
@@ -1327,6 +1441,11 @@ export default function Sales() {
                 <p className="text-2xl font-bold text-emerald-400 font-mono">
                   ${currentTotals.totalPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
                 </p>
+                {currentTotals.discountAmount > 0 && (
+                  <span className="text-[10px] text-amber-400 font-mono block">
+                    (Ahorro de ${currentTotals.discountAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })} COP aplicado)
+                  </span>
+                )}
               </div>
             </div>
 

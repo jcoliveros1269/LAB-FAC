@@ -117,6 +117,12 @@ export default function InvoicePrintView({ document, onClose }) {
                 <span>Subtotal:</span>
                 <span className="font-mono">${formatMoney(document.subtotal)}</span>
               </div>
+              {Number(document.discount) > 0 && (
+                <div className="flex justify-between text-amber-600 font-medium">
+                  <span>Descuento:</span>
+                  <span className="font-mono">-${formatMoney(document.discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-900 font-bold border-t border-slate-300 pt-1.5">
                 <span>TOTAL:</span>
                 <span className="font-mono">${formatMoney(document.total)} COP</span>
