@@ -16,6 +16,7 @@ class RawMaterial(Base):
     cost_per_g = Column(Float, nullable=False) # Costo COP / gramo
     min_stock_alert_g = Column(Float, default=200.0)
     notes = Column(String, nullable=True, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class FinishedProduct(Base):
@@ -44,4 +45,5 @@ class AdditionalSupply(Base):
     unit_cost_cop = Column(Float, default=0.0) # Costo COP unitario o por uso
     stock_units = Column(Float, default=0.0) # Unidades o usos disponibles
     notes = Column(String, nullable=True, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

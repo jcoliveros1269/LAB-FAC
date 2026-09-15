@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Search, Plus, RefreshCw, Layers, X, DollarSign, TrendingDown, CheckCircle2, Edit3, Trash2, Save, FileText, Filter, Wrench, Tag, Box } from 'lucide-react';
+import { Package, Search, Plus, RefreshCw, Layers, X, DollarSign, TrendingDown, CheckCircle2, Edit3, Trash2, Save, FileText, Filter, Wrench, Tag, Box, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { inventoryService } from '../services/api';
+import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 
 export default function Inventory() {
   const [activeSubtab, setActiveSubtab] = useState(() => {
@@ -22,6 +23,16 @@ export default function Inventory() {
   const [productTypeFilter, setProductTypeFilter] = useState('ALL');
   const [productStockFilter, setProductStockFilter] = useState('ALL');
   const [supplyTypeFilter, setSupplyTypeFilter] = useState('ALL');
+  const [materialStartDate, setMaterialStartDate] = useState('');
+  const [materialEndDate, setMaterialEndDate] = useState('');
+
+  const getTodayYMD = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   const DEFAULT_NEW_MATERIAL = {
     name: '',
@@ -31,6 +42,7 @@ export default function Inventory() {
     total_cost: 65000,
     cost_per_g: 65.0,
     min_stock_alert_g: 200,
+    entry_date: getTodayYMD(),
     notes: ''
   };
 
@@ -59,6 +71,7 @@ export default function Inventory() {
     item_type: 'PAPELERIA',
     unit_cost_cop: 1500,
     stock_units: 50,
+    entry_date: getTodayYMD(),
     notes: ''
   };
 
@@ -159,7 +172,8 @@ export default function Inventory() {
         current_stock_g: stockInit,
         cost_per_g: costG,
         min_stock_alert_g: parseFloat(newMaterial.min_stock_alert_g) || 200.0,
-        notes: newMaterial.notes || ''
+        notes: newMaterial.notes || '',
+        created_at: newMaterial.entry_date ? new Date(`${newMaterial.entry_date}T12:00:00Z`).toISOString() : new Date().toISOString()
       };
 
       await inventoryService.createMaterial(payload);
@@ -177,6 +191,8 @@ export default function Inventory() {
 
   const handleOpenEditMaterial = (item) => {
     setEditingMaterial(item);
+    const itemDate = item.created_at || item.updated_at;
+    const ymd = itemDate ? new Date(itemDate).toISOString().split('T')[0] : getTodayYMD();
     setEditMaterialData({
       name: item.name,
       color: item.color,
@@ -187,6 +203,7 @@ export default function Inventory() {
       cost_per_g: item.cost_per_g,
       total_cost: parseFloat(((item.initial_stock_g || 0) * (item.cost_per_g || 0)).toFixed(2)),
       min_stock_alert_g: item.min_stock_alert_g || 200,
+      entry_date: ymd,
       notes: item.notes || ''
     });
   };
@@ -208,7 +225,8 @@ export default function Inventory() {
         current_stock_g: current,
         cost_per_g: parseFloat(editMaterialData.cost_per_g) || 65.0,
         min_stock_alert_g: parseFloat(editMaterialData.min_stock_alert_g) || 200.0,
-        notes: editMaterialData.notes || ''
+        notes: editMaterialData.notes || '',
+        created_at: editMaterialData.entry_date ? new Date(`${editMaterialData.entry_date}T12:00:00Z`).toISOString() : undefined
       });
       toast.success(`Insumo '${editMaterialData.name}' actualizado`);
       setEditingMaterial(null);
@@ -261,7 +279,8 @@ export default function Inventory() {
         item_type: newSupply.item_type,
         unit_cost_cop: parseFloat(newSupply.unit_cost_cop) || 0,
         stock_units: parseFloat(newSupply.stock_units) || 0,
-        notes: newSupply.notes || ''
+        notes: newSupply.notes || '',
+        created_at: newSupply.entry_date ? new Date(`${newSupply.entry_date}T12:00:00Z`).toISOString() : new Date().toISOString()
       };
       await inventoryService.createAdditionalSupply(payload);
       toast.success(`Insumo '${newSupply.name}' registrado exitosamente`);
@@ -374,7 +393,9 @@ export default function Inventory() {
       matchesStatus = (m.current_stock_g || 0) <= 0;
     }
 
-    return matchesSearch && matchesType && matchesStatus;
+    const matchesDate = isDateInRange(m.created_at || m.updated_at, materialStartDate, materialEndDate);
+
+    return matchesSearch && matchesType && matchesStatus && matchesDate;
   });
 
   const filteredProducts = products.filter((p) => {
@@ -680,6 +701,31 @@ export default function Inventory() {
                 </select>
               </div>
 
+              {/* Filtro de Fechas */}
+              <DateRangeFilter
+                startDate={materialStartDate}
+                endDate={materialEndDate}
+                onChange={({ startDate, endDate }) => {
+                  setMaterialStartDate(startDate);
+                  setMaterialEndDate(endDate);
+                }}
+              />
+
+              {(searchTerm || selectedType !== 'ALL' || selectedStatus !== 'ALL' || materialStartDate || materialEndDate) && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedType('ALL');
+                    setSelectedStatus('ALL');
+                    setMaterialStartDate('');
+                    setMaterialEndDate('');
+                  }}
+                  className="text-xs text-slate-400 hover:text-emerald-400 underline whitespace-nowrap px-1"
+                >
+                  Limpiar Filtros
+                </button>
+              )}
+
               <button
                 onClick={() => setShowMaterialModal(true)}
                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-sm text-xs flex items-center gap-1.5 transition-colors"
@@ -771,6 +817,7 @@ export default function Inventory() {
               <thead>
                 <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
                   <th className="py-2 px-2 font-semibold">Material / Ref</th>
+                  <th className="py-2 px-1.5 font-semibold">Fecha</th>
                   <th className="py-2 px-1.5 font-semibold">Tipo</th>
                   <th className="py-2 px-1.5 font-semibold">Color</th>
                   <th className="py-2 px-1.5 font-semibold text-right">Inicial</th>
@@ -796,6 +843,9 @@ export default function Inventory() {
                   return (
                     <tr key={item.id} className="hover:bg-[#222222] transition-colors">
                       <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">{item.name}</td>
+                      <td className="py-2 px-1.5 text-[#A0A0A0] font-mono text-[10px] whitespace-nowrap">
+                        {formatDate(item.created_at || item.updated_at)}
+                      </td>
                       <td className="py-2 px-1.5 text-[#A0A0A0] font-mono">
                         <span className="px-1 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[9px]">
                           {item.material_type}
@@ -1096,13 +1146,13 @@ export default function Inventory() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1">Tipo de Material</label>
                 <select
                   value={newMaterial.material_type}
                   onChange={(e) => setNewMaterial({ ...newMaterial, material_type: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500"
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-medium"
                 >
                   <option value="PETG">PETG</option>
                   <option value="PLA">PLA</option>
@@ -1121,6 +1171,21 @@ export default function Inventory() {
                   value={newMaterial.color}
                   onChange={(e) => setNewMaterial({ ...newMaterial, color: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Fecha de Ingreso / Compra</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newMaterial.entry_date || getTodayYMD()}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, entry_date: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
+                  title="Selecciona la fecha exacta si el insumo fue adquirido en días anteriores"
                 />
               </div>
             </div>
@@ -1231,13 +1296,13 @@ export default function Inventory() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1">Tipo de Material</label>
                 <select
                   value={editMaterialData.material_type}
                   onChange={(e) => setEditMaterialData({ ...editMaterialData, material_type: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500"
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-medium"
                 >
                   <option value="PETG">PETG</option>
                   <option value="PLA">PLA</option>
@@ -1255,6 +1320,19 @@ export default function Inventory() {
                   value={editMaterialData.color}
                   onChange={(e) => setEditMaterialData({ ...editMaterialData, color: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Fecha de Ingreso</span>
+                </label>
+                <input
+                  type="date"
+                  value={editMaterialData.entry_date || ''}
+                  onChange={(e) => setEditMaterialData({ ...editMaterialData, entry_date: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
                 />
               </div>
             </div>
@@ -1359,7 +1437,7 @@ export default function Inventory() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1">Tipo de Insumo</label>
                 <select
@@ -1386,7 +1464,7 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-[#A0A0A0] mb-1">Stock Disponible (Und)</label>
+                <label className="block text-[#A0A0A0] mb-1">Stock (Und)</label>
                 <input
                   type="number"
                   step="1"
@@ -1395,6 +1473,20 @@ export default function Inventory() {
                   value={newSupply.stock_units}
                   onChange={(e) => setNewSupply({ ...newSupply, stock_units: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Fecha Ingreso</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newSupply.entry_date || getTodayYMD()}
+                  onChange={(e) => setNewSupply({ ...newSupply, entry_date: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500 cursor-pointer"
                 />
               </div>
             </div>

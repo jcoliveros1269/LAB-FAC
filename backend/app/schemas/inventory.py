@@ -12,6 +12,7 @@ class RawMaterialBase(BaseModel):
     cost_per_g: float
     min_stock_alert_g: float = 200.0
     notes: Optional[str] = ""
+    created_at: Optional[datetime] = None
 
 class RawMaterialCreate(RawMaterialBase):
     pass
@@ -26,9 +27,11 @@ class RawMaterialUpdate(BaseModel):
     cost_per_g: Optional[float] = None
     min_stock_alert_g: Optional[float] = None
     notes: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 class RawMaterialResponse(RawMaterialBase):
     id: int
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:
@@ -61,6 +64,7 @@ class AdditionalSupplyBase(BaseModel):
     unit_cost_cop: float = 0.0
     stock_units: float = 0.0
     notes: Optional[str] = ""
+    created_at: Optional[datetime] = None
 
 class AdditionalSupplyCreate(AdditionalSupplyBase):
     pass
@@ -71,9 +75,11 @@ class AdditionalSupplyUpdate(BaseModel):
     unit_cost_cop: Optional[float] = None
     stock_units: Optional[float] = None
     notes: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 class AdditionalSupplyResponse(AdditionalSupplyBase):
     id: int
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:

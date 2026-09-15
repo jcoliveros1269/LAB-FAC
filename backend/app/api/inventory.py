@@ -38,19 +38,24 @@ def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_d
     mat_dict = material.model_dump()
     if mat_dict.get("current_stock_g") == 0.0 and (mat_dict.get("initial_stock_g", 0.0) > 0.0) and (mat_dict.get("outgoing_stock_g", 0.0) == 0.0):
         mat_dict["current_stock_g"] = mat_dict["initial_stock_g"]
+    
+    # Manejar fecha personalizada de ingreso o compra
+    custom_date = mat_dict.get("created_at") or datetime.utcnow()
+    mat_dict["created_at"] = custom_date
+    mat_dict["updated_at"] = custom_date
         
     db_material = RawMaterial(**mat_dict)
     db.add(db_material)
     db.commit()
     db.refresh(db_material)
 
-    # Registro de Asiento Contable Automático (Partida Doble)
+    # Registro de Asiento Contable Automático (Partida Doble) con fecha personalizada
     total_value = (db_material.initial_stock_g or 0.0) * (db_material.cost_per_g or 0.0)
     if total_value > 0:
         entry_num = get_next_entry_number(db)
         j_debit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=custom_date,
             puc_code="140505",
             account_name="Inventario de Materias Primas / Filamentos",
             description=f"Ingreso/Compra Filamento {db_material.material_type} {db_material.color} ({db_material.initial_stock_g}g)",
@@ -59,7 +64,7 @@ def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_d
         )
         j_credit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=custom_date,
             puc_code="110505",
             account_name="Caja General",
             description=f"Pago Compra Filamento {db_material.material_type} {db_material.color}",
@@ -163,12 +168,15 @@ def get_additional_supplies(
 
 @router.post("/additional-supplies", response_model=AdditionalSupplyResponse)
 def create_additional_supply(supply: AdditionalSupplyCreate, db: Session = Depends(get_db)):
+    custom_date = supply.created_at or datetime.utcnow()
     db_supply = AdditionalSupply(
         name=supply.name.strip(),
         item_type=supply.item_type.upper(),
         unit_cost_cop=supply.unit_cost_cop,
         stock_units=supply.stock_units,
-        notes=supply.notes or ""
+        notes=supply.notes or "",
+        created_at=custom_date,
+        updated_at=custom_date
     )
     db.add(db_supply)
     db.commit()

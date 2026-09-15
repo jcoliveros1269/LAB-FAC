@@ -12,6 +12,26 @@ from app.api.accounting import router as accounting_router
 # Sincronizar esquemas de base de datos SQLite
 Base.metadata.create_all(bind=engine)
 
+# Migración segura de columnas adicionales en SQLite
+try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        res = conn.execute(text("PRAGMA table_info(raw_materials)"))
+        cols = [r[1] for r in res.fetchall()]
+        if cols and "created_at" not in cols:
+            conn.execute(text("ALTER TABLE raw_materials ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE raw_materials SET created_at = updated_at WHERE created_at IS NULL"))
+            conn.commit()
+
+        res_supp = conn.execute(text("PRAGMA table_info(additional_supplies)"))
+        cols_supp = [r[1] for r in res_supp.fetchall()]
+        if cols_supp and "created_at" not in cols_supp:
+            conn.execute(text("ALTER TABLE additional_supplies ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE additional_supplies SET created_at = updated_at WHERE created_at IS NULL"))
+            conn.commit()
+except Exception as e:
+    pass
+
 app = FastAPI(
     title="Prisma Lab ERP - API Backend",
     description="Sistema Integral de Producción, Cotización y Contabilidad 3D (Migración Excel a Web)",
