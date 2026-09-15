@@ -10,6 +10,11 @@ export default function InvoicePrintView({ document, onClose }) {
 
   const isInvoice = document.doc_type === 'FACTURA';
 
+  const formatMoney = (val) => {
+    const num = Number(val) || 0;
+    return num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] rounded-sm w-full max-w-4xl max-h-[90vh] flex flex-col shadow-none overflow-hidden text-xs">
@@ -89,17 +94,17 @@ export default function InvoicePrintView({ document, onClose }) {
                   document.items.map((item, i) => (
                     <tr key={i}>
                       <td className="py-2.5 px-3 font-medium text-slate-800">{item.product_name}</td>
-                      <td className="py-2.5 px-3 text-center text-slate-700">{item.quantity} und</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600">${item.unit_price.toLocaleString('es-CO')}</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">${item.total_price.toLocaleString('es-CO')}</td>
+                      <td className="py-2.5 px-3 text-center font-semibold text-slate-800">{item.quantity} und</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-slate-600">${formatMoney(item.unit_price)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">${formatMoney(item.total_price)}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td className="py-2.5 px-3 font-medium text-slate-800">Servicio de Fabricación e Impresión 3D</td>
-                    <td className="py-2.5 px-3 text-center text-slate-700">1 und</td>
-                    <td className="py-2.5 px-3 text-right font-mono text-slate-600">${document.subtotal.toLocaleString('es-CO')}</td>
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">${document.total.toLocaleString('es-CO')}</td>
+                    <td className="py-2.5 px-3 text-center font-semibold text-slate-800">{document.quantity || 1} und</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-slate-600">${formatMoney(document.subtotal)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">${formatMoney(document.total)}</td>
                   </tr>
                 )}
               </tbody>
@@ -110,11 +115,11 @@ export default function InvoicePrintView({ document, onClose }) {
             <div className="w-56 space-y-1.5 text-xs bg-slate-50 p-3 rounded-sm border border-slate-200">
               <div className="flex justify-between text-slate-600">
                 <span>Subtotal:</span>
-                <span className="font-mono">${document.subtotal.toLocaleString('es-CO')}</span>
+                <span className="font-mono">${formatMoney(document.subtotal)}</span>
               </div>
               <div className="flex justify-between text-slate-900 font-bold border-t border-slate-300 pt-1.5">
                 <span>TOTAL:</span>
-                <span className="font-mono">${document.total.toLocaleString('es-CO')} COP</span>
+                <span className="font-mono">${formatMoney(document.total)} COP</span>
               </div>
             </div>
           </div>

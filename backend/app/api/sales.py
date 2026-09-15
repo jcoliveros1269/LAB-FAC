@@ -145,6 +145,7 @@ def create_sales_document(doc: SalesDocumentCreate, db: Session = Depends(get_db
         db.add(j2)
 
     db.commit()
+    db.expire_all()
     db.refresh(db_doc)
     return db_doc
 
@@ -216,6 +217,7 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     db.add(j_credit)
 
     db.commit()
+    db.expire_all()
     db.refresh(doc)
     return doc
 

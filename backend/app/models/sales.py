@@ -30,6 +30,8 @@ class DocumentType(Base):
     total = Column(Float, default=0.0)
     status = Column(String, default="DRAFT") # DRAFT, QUOTED, INVOICED, PAID, CANCELLED
 
+    items = relationship("SalesDocumentItem", backref="document", cascade="all, delete-orphan", lazy="joined")
+
 class SalesDocumentItem(Base):
     __tablename__ = "sales_document_items"
 
