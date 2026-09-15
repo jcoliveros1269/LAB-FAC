@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BookOpen, DollarSign, RefreshCw, Layers, Search, Plus, X, Filter, List, CheckCircle2, Scale, ChevronDown, ChevronRight, FolderTree, ArrowRight, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { accountingService } from '../services/api';
+import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 
 const PUC_HIERARCHY_MAP = {
   // Clases (1 dígito)
@@ -89,8 +90,12 @@ export default function Accounting() {
   const [pucClassFilter, setPucClassFilter] = useState('all');
   const [journalSearch, setJournalSearch] = useState('');
   const [journalClassFilter, setJournalClassFilter] = useState('all');
+  const [journalStartDate, setJournalStartDate] = useState('');
+  const [journalEndDate, setJournalEndDate] = useState('');
   const [cashSearch, setCashSearch] = useState('');
   const [cashTypeFilter, setCashTypeFilter] = useState('ALL');
+  const [cashStartDate, setCashStartDate] = useState('');
+  const [cashEndDate, setCashEndDate] = useState('');
 
   // Estado para Modal de Nueva Cuenta PUC
   const [showAddPucModal, setShowAddPucModal] = useState(false);
@@ -249,7 +254,9 @@ export default function Accounting() {
     const matchesClass =
       journalClassFilter === 'all' || row.puc_code?.startsWith(journalClassFilter);
 
-    return matchesSearch && matchesClass;
+    const matchesDate = isDateInRange(row.entry_date, journalStartDate, journalEndDate);
+
+    return matchesSearch && matchesClass && matchesDate;
   });
 
   const totalJournalDebit = filteredJournal.reduce((sum, r) => sum + (r.debit || 0), 0);
@@ -261,7 +268,10 @@ export default function Accounting() {
   // Resumen del Libro Mayor (Cuentas T y Balances por Cuenta PUC)
   const mayorSummary = useMemo(() => {
     const accMap = {};
-    journalEntries.forEach(entry => {
+    const sourceEntries = journalEntries.filter(entry =>
+      isDateInRange(entry.entry_date, journalStartDate, journalEndDate)
+    );
+    sourceEntries.forEach(entry => {
       const code = entry.puc_code || 'SIN_PUC';
       if (!accMap[code]) {
         accMap[code] = {
@@ -299,7 +309,7 @@ export default function Accounting() {
         nature: isDebitNature ? 'Débito' : 'Crédito'
       };
     }).sort((a, b) => a.puc_code.localeCompare(b.puc_code));
-  }, [journalEntries]);
+  }, [journalEntries, journalStartDate, journalEndDate]);
 
   const filteredMayor = mayorSummary.filter(acc => {
     const q = journalSearch.trim().toLowerCase();
@@ -330,7 +340,9 @@ export default function Accounting() {
     if (cashTypeFilter === 'INCOME') matchesType = (cf.income || 0) > 0;
     else if (cashTypeFilter === 'EXPENSE') matchesType = (cf.credit || 0) > 0;
 
-    return matchesSearch && matchesType;
+    const matchesDate = isDateInRange(cf.record_date, cashStartDate, cashEndDate);
+
+    return matchesSearch && matchesType && matchesDate;
   });
 
   const pnlChartData = pnl ? [
@@ -517,51 +529,78 @@ export default function Accounting() {
             </div>
           </div>
 
-          {/* Bar de Búsqueda y Filtros por Clase para Libro Diario Mayor */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder={journalViewMode === 'journal' ? "Buscar asiento por PUC, cuenta, número de asiento (#) o concepto..." : "Buscar cuenta PUC por código o nombre..."}
-                value={journalSearch}
-                onChange={(e) => setJournalSearch(e.target.value)}
-                className="w-full bg-[#101010] border border-[#2A2A2A] rounded-sm pl-9 pr-8 py-2 text-xs text-[#EAEAEA] placeholder-[#666666] focus:outline-none focus:border-slate-500 transition-colors"
-              />
-              {journalSearch && (
-                <button
-                  onClick={() => setJournalSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A0A0A0] hover:text-[#EAEAEA]"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+          {/* Bar de Búsqueda y Filtros por Clase y Fecha para Libro Diario Mayor */}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder={journalViewMode === 'journal' ? "Buscar asiento por PUC, cuenta, número de asiento (#) o concepto..." : "Buscar cuenta PUC por código o nombre..."}
+                  value={journalSearch}
+                  onChange={(e) => setJournalSearch(e.target.value)}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] rounded-sm pl-9 pr-8 py-2 text-xs text-[#EAEAEA] placeholder-[#666666] focus:outline-none focus:border-slate-500 transition-colors"
+                />
+                {journalSearch && (
+                  <button
+                    onClick={() => setJournalSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A0A0A0] hover:text-[#EAEAEA]"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filtros por Clase Contable */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Filter className="w-3.5 h-3.5 text-[#666666] hidden lg:inline" />
+                {[
+                  { key: 'all', label: 'Todas' },
+                  { key: '1', label: '1. Activo' },
+                  { key: '2', label: '2. Pasivo' },
+                  { key: '3', label: '3. Patrimonio' },
+                  { key: '4', label: '4. Ingreso' },
+                  { key: '5', label: '5. Gasto' },
+                  { key: '6', label: '6. Costo' },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setJournalClassFilter(item.key)}
+                    className={`px-2.5 py-1 rounded-sm text-[11px] font-medium transition-colors ${
+                      journalClassFilter === item.key
+                        ? 'bg-slate-200 text-slate-950 font-semibold'
+                        : 'bg-[#101010] text-[#A0A0A0] border border-[#2A2A2A] hover:text-[#EAEAEA]'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Filtros por Clase Contable */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Filter className="w-3.5 h-3.5 text-[#666666] hidden lg:inline" />
-              {[
-                { key: 'all', label: 'Todas' },
-                { key: '1', label: '1. Activo' },
-                { key: '2', label: '2. Pasivo' },
-                { key: '3', label: '3. Patrimonio' },
-                { key: '4', label: '4. Ingreso' },
-                { key: '5', label: '5. Gasto' },
-                { key: '6', label: '6. Costo' },
-              ].map((item) => (
+            {/* Filtro por Rango de Fechas */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-[#222222]">
+              <DateRangeFilter
+                startDate={journalStartDate}
+                endDate={journalEndDate}
+                onChange={({ startDate, endDate }) => {
+                  setJournalStartDate(startDate);
+                  setJournalEndDate(endDate);
+                }}
+              />
+              {(journalSearch || journalClassFilter !== 'all' || journalStartDate || journalEndDate) && (
                 <button
-                  key={item.key}
-                  onClick={() => setJournalClassFilter(item.key)}
-                  className={`px-2.5 py-1 rounded-sm text-[11px] font-medium transition-colors ${
-                    journalClassFilter === item.key
-                      ? 'bg-slate-200 text-slate-950 font-semibold'
-                      : 'bg-[#101010] text-[#A0A0A0] border border-[#2A2A2A] hover:text-[#EAEAEA]'
-                  }`}
+                  onClick={() => {
+                    setJournalSearch('');
+                    setJournalClassFilter('all');
+                    setJournalStartDate('');
+                    setJournalEndDate('');
+                  }}
+                  className="text-[11px] text-rose-400 hover:text-rose-300 hover:underline"
                 >
-                  {item.label}
+                  Restablecer todos los filtros
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
@@ -574,11 +613,13 @@ export default function Accounting() {
                 <>Mostrando <strong className="text-[#EAEAEA]">{filteredMayor.length}</strong> de <strong className="text-[#EAEAEA]">{mayorSummary.length}</strong> cuentas del Libro Mayor</>
               )}
             </span>
-            {(journalSearch || journalClassFilter !== 'all') && (
+            {(journalSearch || journalClassFilter !== 'all' || journalStartDate || journalEndDate) && (
               <button
                 onClick={() => {
                   setJournalSearch('');
                   setJournalClassFilter('all');
+                  setJournalStartDate('');
+                  setJournalEndDate('');
                 }}
                 className="text-slate-400 hover:underline"
               >
@@ -608,8 +649,8 @@ export default function Accounting() {
                     filteredJournal.map((row) => (
                       <tr key={row.id} className="hover:bg-[#222222]">
                         <td className="py-2.5 px-3 font-mono font-medium text-[#A0A0A0]">#{row.entry_number}</td>
-                        <td className="py-2.5 px-3 text-[#666666]">
-                          {new Date(row.entry_date).toLocaleDateString('es-ES')}
+                        <td className="py-2.5 px-3 text-[#A0A0A0] font-mono text-[11px]">
+                          {formatDate(row.entry_date)}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-slate-300 font-medium">{row.puc_code}</td>
                         <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">{row.account_name}</td>
@@ -1045,54 +1086,81 @@ export default function Accounting() {
       {activeSubtab === 'cashflow' && (
         <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-sm overflow-hidden space-y-3 p-3">
           {/* Header, Búsqueda y Filtros de Flujo de Caja */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar movimiento de caja por descripción o categoría..."
-                value={cashSearch}
-                onChange={(e) => setCashSearch(e.target.value)}
-                className="w-full bg-[#101010] border border-[#2A2A2A] rounded-sm pl-9 pr-8 py-2 text-xs text-[#EAEAEA] placeholder-[#666666] focus:outline-none focus:border-slate-500 transition-colors"
-              />
-              {cashSearch && (
-                <button
-                  onClick={() => setCashSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A0A0A0] hover:text-[#EAEAEA]"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Filtro Tipo Movimiento */}
-              <div className="flex items-center gap-1 bg-[#101010] p-1 rounded-sm border border-[#2A2A2A]">
-                {[
-                  { key: 'ALL', label: 'Todos' },
-                  { key: 'INCOME', label: 'Ingresos (+)' },
-                  { key: 'EXPENSE', label: 'Egresos (-)' },
-                ].map((item) => (
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar movimiento de caja por descripción o categoría..."
+                  value={cashSearch}
+                  onChange={(e) => setCashSearch(e.target.value)}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] rounded-sm pl-9 pr-8 py-2 text-xs text-[#EAEAEA] placeholder-[#666666] focus:outline-none focus:border-slate-500 transition-colors"
+                />
+                {cashSearch && (
                   <button
-                    key={item.key}
-                    onClick={() => setCashTypeFilter(item.key)}
-                    className={`px-2.5 py-1 rounded-sm text-[11px] font-medium transition-colors ${
-                      cashTypeFilter === item.key
-                        ? 'bg-slate-200 text-slate-950 font-semibold'
-                        : 'text-[#A0A0A0] hover:text-[#EAEAEA]'
-                    }`}
+                    onClick={() => setCashSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A0A0A0] hover:text-[#EAEAEA]"
                   >
-                    {item.label}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
+                )}
               </div>
 
-              <button
-                onClick={() => setShowAddCashModal(true)}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-sm text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" /> Registrar Movimiento
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Filtro Tipo Movimiento */}
+                <div className="flex items-center gap-1 bg-[#101010] p-1 rounded-sm border border-[#2A2A2A]">
+                  {[
+                    { key: 'ALL', label: 'Todos' },
+                    { key: 'INCOME', label: 'Ingresos (+)' },
+                    { key: 'EXPENSE', label: 'Egresos (-)' },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => setCashTypeFilter(item.key)}
+                      className={`px-2.5 py-1 rounded-sm text-[11px] font-medium transition-colors ${
+                        cashTypeFilter === item.key
+                          ? 'bg-slate-200 text-slate-950 font-semibold'
+                          : 'text-[#A0A0A0] hover:text-[#EAEAEA]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowAddCashModal(true)}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-sm text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Registrar Movimiento
+                </button>
+              </div>
+            </div>
+
+            {/* Filtro por Rango de Fechas para Flujo de Caja */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-[#222222]">
+              <DateRangeFilter
+                startDate={cashStartDate}
+                endDate={cashEndDate}
+                onChange={({ startDate, endDate }) => {
+                  setCashStartDate(startDate);
+                  setCashEndDate(endDate);
+                }}
+              />
+              {(cashSearch || cashTypeFilter !== 'ALL' || cashStartDate || cashEndDate) && (
+                <button
+                  onClick={() => {
+                    setCashSearch('');
+                    setCashTypeFilter('ALL');
+                    setCashStartDate('');
+                    setCashEndDate('');
+                  }}
+                  className="text-[11px] text-rose-400 hover:text-rose-300 hover:underline"
+                >
+                  Restablecer todos los filtros
+                </button>
+              )}
             </div>
           </div>
 
@@ -1101,11 +1169,13 @@ export default function Accounting() {
             <span>
               Mostrando <strong className="text-[#EAEAEA]">{filteredCashFlow.length}</strong> de <strong className="text-[#EAEAEA]">{cashFlow.length}</strong> movimientos de caja
             </span>
-            {(cashSearch || cashTypeFilter !== 'ALL') && (
+            {(cashSearch || cashTypeFilter !== 'ALL' || cashStartDate || cashEndDate) && (
               <button
                 onClick={() => {
                   setCashSearch('');
                   setCashTypeFilter('ALL');
+                  setCashStartDate('');
+                  setCashEndDate('');
                 }}
                 className="text-slate-400 hover:underline"
               >
@@ -1131,7 +1201,7 @@ export default function Accounting() {
                 {filteredCashFlow.length > 0 ? (
                   filteredCashFlow.map((cf) => (
                     <tr key={cf.id} className="hover:bg-[#222222]">
-                      <td className="py-2.5 px-3 text-[#666666]">{new Date(cf.record_date).toLocaleDateString('es-ES')}</td>
+                      <td className="py-2.5 px-3 text-[#A0A0A0] font-mono text-[11px]">{formatDate(cf.record_date)}</td>
                       <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">{cf.description}</td>
                       <td className="py-2.5 px-3 text-[#A0A0A0]">{cf.category}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-emerald-400 font-medium">

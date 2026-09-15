@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { productionService, inventoryService, salesService } from '../services/api';
+import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 
 export default function Production({ setActiveTab }) {
   const [activeSubtab, setActiveSubtab] = useState(() => {
@@ -39,6 +40,8 @@ export default function Production({ setActiveTab }) {
   // Filtros y Búsqueda para el Histórico
   const [historySearch, setHistorySearch] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState('ALL');
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
 
   // Modal Edición
   const [editingItem, setEditingItem] = useState(null);
@@ -336,7 +339,9 @@ export default function Production({ setActiveTab }) {
       (row.filament3_type && row.filament3_type.toUpperCase() === historyTypeFilter) ||
       (row.filament4_type && row.filament4_type.toUpperCase() === historyTypeFilter);
 
-    return matchesSearch && matchesType;
+    const matchesDate = isDateInRange(row.created_at, historyStartDate, historyEndDate);
+
+    return matchesSearch && matchesType && matchesDate;
   });
 
   const resetFormData = () => {
@@ -881,7 +886,7 @@ export default function Production({ setActiveTab }) {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 bg-[#101010] border border-[#2A2A2A] rounded-sm px-2.5 py-1">
                 <Filter className="w-3 h-3 text-[#666666]" />
                 <select
@@ -898,15 +903,27 @@ export default function Production({ setActiveTab }) {
                 </select>
               </div>
 
-              {(historySearch || historyTypeFilter !== 'ALL') && (
+              {/* Filtro de Fechas */}
+              <DateRangeFilter
+                startDate={historyStartDate}
+                endDate={historyEndDate}
+                onChange={({ startDate, endDate }) => {
+                  setHistoryStartDate(startDate);
+                  setHistoryEndDate(endDate);
+                }}
+              />
+
+              {(historySearch || historyTypeFilter !== 'ALL' || historyStartDate || historyEndDate) && (
                 <button
                   onClick={() => {
                     setHistorySearch('');
                     setHistoryTypeFilter('ALL');
+                    setHistoryStartDate('');
+                    setHistoryEndDate('');
                   }}
                   className="text-xs text-slate-400 hover:text-emerald-400 underline whitespace-nowrap px-1"
                 >
-                  Limpiar
+                  Limpiar Filtros
                 </button>
               )}
 
@@ -932,6 +949,7 @@ export default function Production({ setActiveTab }) {
                 <thead>
                   <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
                     <th className="py-2 px-1.5 font-semibold">Código</th>
+                    <th className="py-2 px-1.5 font-semibold">Fecha</th>
                     <th className="py-2 px-2 font-semibold">Proyecto</th>
                     <th className="py-2 px-1 font-semibold text-center">Cant</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Gramos</th>
@@ -939,7 +957,7 @@ export default function Production({ setActiveTab }) {
                     <th className="py-2 px-1.5 font-semibold text-right">Mat.</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Energía</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Deprec.</th>
-                    <th className="py-2 px-1 font-semibold text-center">Desc.</th>
+                    <th className="py-2 px-1.5 font-semibold text-center">Desc.</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Costo Unit.</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Precio Venta</th>
                     <th className="py-2 px-1.5 font-semibold text-center">Acciones</th>
@@ -950,6 +968,9 @@ export default function Production({ setActiveTab }) {
                     filteredHistory.map((row) => (
                       <tr key={row.id} className="hover:bg-[#222222] transition-colors">
                         <td className="py-1.5 px-1.5 font-mono font-semibold text-emerald-400">{row.project_code}</td>
+                        <td className="py-1.5 px-1.5 text-[#A0A0A0] whitespace-nowrap font-mono text-[10px]">
+                          {formatDate(row.created_at)}
+                        </td>
                         <td className="py-1.5 px-2 font-medium text-[#EAEAEA]">
                           <div className="break-words">{row.project_name}</div>
                           {(row.filament1_type || row.filament2_type) && (

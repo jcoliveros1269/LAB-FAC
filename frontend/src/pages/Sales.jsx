@@ -26,6 +26,7 @@ import {
 import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
 import InvoicePrintView from '../components/InvoicePrintView';
+import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 
 export default function Sales() {
   const [activeSubtab, setActiveSubtab] = useState(() => {
@@ -47,6 +48,8 @@ export default function Sales() {
   const [docSearch, setDocSearch] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('ALL');
   const [docStatusFilter, setDocStatusFilter] = useState('ALL');
+  const [docStartDate, setDocStartDate] = useState('');
+  const [docEndDate, setDocEndDate] = useState('');
 
   // Búsqueda de clientes
   const [customerSearch, setCustomerSearch] = useState('');
@@ -562,8 +565,9 @@ export default function Sales() {
     const matchesSearch = !q || docNum.includes(q) || custName.includes(q) || docType.includes(q) || status.includes(q);
     const matchesType = docTypeFilter === 'ALL' || doc.doc_type === docTypeFilter;
     const matchesStatus = docStatusFilter === 'ALL' || doc.status === docStatusFilter;
+    const matchesDate = isDateInRange(doc.created_at, docStartDate, docEndDate);
 
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesSearch && matchesType && matchesStatus && matchesDate;
   });
 
   const filteredCustomers = customers.filter((c) => {
@@ -687,16 +691,28 @@ export default function Sales() {
                 </select>
               </div>
 
-              {(docSearch || docTypeFilter !== 'ALL' || docStatusFilter !== 'ALL') && (
+              {/* Filtro de Fechas */}
+              <DateRangeFilter
+                startDate={docStartDate}
+                endDate={docEndDate}
+                onChange={({ startDate, endDate }) => {
+                  setDocStartDate(startDate);
+                  setDocEndDate(endDate);
+                }}
+              />
+
+              {(docSearch || docTypeFilter !== 'ALL' || docStatusFilter !== 'ALL' || docStartDate || docEndDate) && (
                 <button
                   onClick={() => {
                     setDocSearch('');
                     setDocTypeFilter('ALL');
                     setDocStatusFilter('ALL');
+                    setDocStartDate('');
+                    setDocEndDate('');
                   }}
                   className="text-xs text-slate-400 hover:text-emerald-400 underline whitespace-nowrap px-1"
                 >
-                  Limpiar
+                  Limpiar Filtros
                 </button>
               )}
             </div>
@@ -729,6 +745,7 @@ export default function Sales() {
                   <thead>
                     <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[11px]">
                       <th className="py-2.5 px-3 font-semibold">N° Documento</th>
+                      <th className="py-2.5 px-3 font-semibold">Fecha</th>
                       <th className="py-2.5 px-3 font-semibold">Tipo</th>
                       <th className="py-2.5 px-3 font-semibold">Cliente</th>
                       <th className="py-2.5 px-3 font-semibold text-right">Subtotal</th>
@@ -741,6 +758,9 @@ export default function Sales() {
                     {filteredDocuments.map((doc) => (
                       <tr key={doc.id} className="hover:bg-[#222222] transition-colors">
                         <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">{doc.doc_number}</td>
+                        <td className="py-2.5 px-3 font-mono text-[#A0A0A0] text-[11px] whitespace-nowrap">
+                          {formatDate(doc.created_at)}
+                        </td>
                         <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] ${doc.doc_type === 'FACTURA' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-300 border border-slate-500/20'}`}>
                             {doc.doc_type}
