@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck, Sparkles, Loader2 } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { APP_VERSION } from '../version';
@@ -33,12 +33,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillAdminCredentials = () => {
-    setUsername('admin');
-    setPassword('admin123');
-    toast.info('Credenciales de administrador cargadas');
   };
 
   return (
@@ -135,27 +129,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Tarjeta de ayuda para primer inicio */}
-          <div className="mt-6 pt-5 border-t border-[#222222]">
-            <div className="p-3 bg-[#161616] border border-[#282828] rounded-lg text-[11px] text-[#888888] flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-[#CCCCCC] font-medium">Credenciales del Administrador:</p>
-                <p className="font-mono text-emerald-400 mt-0.5">
-                  Usuario: <strong className="text-white">admin</strong> • Clave:{' '}
-                  <strong className="text-white">admin123</strong>
-                </p>
-                <button
-                  type="button"
-                  onClick={fillAdminCredentials}
-                  className="mt-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 underline font-medium cursor-pointer"
-                >
-                  Completar automáticamente para ingresar
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Footer versión */}
