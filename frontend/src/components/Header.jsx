@@ -48,6 +48,8 @@ export default function Header({ activeTitle, theme, toggleTheme }) {
         return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
       case 'amber':
         return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+      case 'purple':
+        return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
       default:
         return 'bg-slate-500/10 text-slate-300 border-slate-500/30';
     }

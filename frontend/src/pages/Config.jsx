@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, RefreshCw, Zap, Database, Download, Search, X, Plus, Edit3, Trash2, Check, Percent } from 'lucide-react';
+import { Settings, Save, RefreshCw, Zap, Database, Download, Search, X, Plus, Edit3, Trash2, Check, Percent, Users, Sliders, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { configService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import UserManagement from '../components/UserManagement';
 
 export default function Config() {
+  const { user } = useAuth();
+  const [activeSubTab, setActiveSubTab] = useState('params');
   const [configs, setConfigs] = useState([]);
   const [discounts, setDiscounts] = useState([]);
   const [discountSearch, setDiscountSearch] = useState('');
@@ -169,8 +173,41 @@ export default function Config() {
 
   return (
     <div className="space-y-4 w-full">
-      {/* Respaldo */}
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] p-4 rounded-sm flex items-center justify-between">
+      {/* Sub-Pestañas de Configuración (Solo ADMIN) */}
+      {user?.role === 'ADMIN' && (
+        <div className="flex items-center gap-2 border-b border-[#2A2A2A] pb-3">
+          <button
+            onClick={() => setActiveSubTab('params')}
+            className={`px-3 py-1.5 rounded-sm text-xs font-mono flex items-center gap-2 transition-all ${
+              activeSubTab === 'params'
+                ? 'bg-slate-800 text-white font-semibold border border-slate-600 shadow-sm'
+                : 'text-[#8E8E8E] hover:text-white hover:bg-[#1E1E1E]'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Parámetros & Descuentos</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('users')}
+            className={`px-3 py-1.5 rounded-sm text-xs font-mono flex items-center gap-2 transition-all ${
+              activeSubTab === 'users'
+                ? 'bg-gradient-to-r from-cyan-950 to-blue-950 text-cyan-300 font-semibold border border-cyan-500/40 shadow-sm shadow-cyan-950/50'
+                : 'text-[#8E8E8E] hover:text-white hover:bg-[#1E1E1E]'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Usuarios & Control de Accesos</span>
+          </button>
+        </div>
+      )}
+
+      {activeSubTab === 'users' && user?.role === 'ADMIN' ? (
+        <UserManagement />
+      ) : (
+        <>
+          {/* Respaldo */}
+          <div className="bg-[#1A1A1A] border border-[#2A2A2A] p-4 rounded-sm flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Database className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
           <div>
@@ -507,6 +544,8 @@ export default function Config() {
             </div>
           </form>
         </div>
+      )}
+        </>
       )}
     </div>
   );

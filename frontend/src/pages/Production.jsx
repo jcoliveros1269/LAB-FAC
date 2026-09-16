@@ -3,8 +3,10 @@ import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Sav
 import { toast } from 'sonner';
 import { productionService, inventoryService, salesService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
+import { useAuth } from '../context/AuthContext';
 
 export default function Production({ setActiveTab }) {
+  const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     return localStorage.getItem('prisma_lab_subtab_production') || 'calculator';
   });
@@ -1110,20 +1112,24 @@ export default function Production({ setActiveTab }) {
                         <td className="py-1.5 px-1.5 text-right text-[#EAEAEA] font-mono font-semibold">${(row.total_unit_cost || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                         <td className="py-1.5 px-1.5 text-right font-bold text-emerald-400 font-mono">${(row.suggested_price_margin || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                         <td className="py-1.5 px-1.5 text-center flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenEditModal(row)}
-                            title="Editar Registro"
-                            className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A]"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteHistoryItem(row.id, row.project_code)}
-                            title="Eliminar Registro"
-                            className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-sm border border-rose-500/20"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => handleOpenEditModal(row)}
+                              title="Editar Registro"
+                              className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A]"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteHistoryItem(row.id, row.project_code)}
+                              title="Eliminar Registro"
+                              className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-sm border border-rose-500/20"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))

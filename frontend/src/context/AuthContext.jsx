@@ -13,6 +13,7 @@ export const ROLE_LABELS = {
   ADMIN: { label: 'Administrador', color: 'emerald' },
   OPERATOR: { label: 'Operador Taller', color: 'cyan' },
   SELLER: { label: 'Ventas & Cotizaciones', color: 'amber' },
+  CUSTOM: { label: 'Personalizado', color: 'purple' },
 };
 
 export function AuthProvider({ children }) {
@@ -69,13 +70,28 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const allowedTabs = user?.role ? (ROLE_PERMISSIONS[user.role] || ['dashboard']) : [];
+  // Calcular pestañas permitidas dinámicamente según allowed_modules o rol
+  const allowedTabs = React.useMemo(() => {
+    if (!user) return [];
+    if (user.role === 'ADMIN') {
+      return ['dashboard', 'production', 'inventory', 'sales', 'accounting', 'config'];
+    }
+    if (user.allowed_modules) {
+      return user.allowed_modules.split(',').map((m) => m.trim().toLowerCase()).filter(Boolean);
+    }
+    return ROLE_PERMISSIONS[user.role] || ['dashboard'];
+  }, [user]);
 
   const canAccess = (tabId) => {
     if (!user) return false;
     if (user.role === 'ADMIN') return true;
     return allowedTabs.includes(tabId);
   };
+
+  // Capacidades operativas granulares
+  const canDelete = Boolean(user && (user.role === 'ADMIN' || (user.can_delete && !user.read_only)));
+  const canEdit = Boolean(user && (user.role === 'ADMIN' || (user.can_edit && !user.read_only)));
+  const isReadOnly = Boolean(user && user.role !== 'ADMIN' && user.read_only);
 
   return (
     <AuthContext.Provider
@@ -88,6 +104,9 @@ export function AuthProvider({ children }) {
         logout,
         canAccess,
         allowedTabs,
+        canDelete,
+        canEdit,
+        isReadOnly,
       }}
     >
       {children}

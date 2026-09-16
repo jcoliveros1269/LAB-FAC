@@ -9,8 +9,15 @@ class User(Base):
     username = Column(String(50), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(100), nullable=False)
-    role = Column(String(20), default="OPERATOR", nullable=False) # ADMIN, OPERATOR, SELLER
+    role = Column(String(20), default="OPERATOR", nullable=False) # ADMIN, OPERATOR, SELLER, CUSTOM
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Permisos Granulares
+    can_delete = Column(Boolean, default=True, nullable=False)
+    can_edit = Column(Boolean, default=True, nullable=False)
+    read_only = Column(Boolean, default=False, nullable=False)
+    allowed_modules = Column(String(255), default="dashboard,production,inventory,sales,accounting,config", nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

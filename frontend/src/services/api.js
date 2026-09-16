@@ -107,6 +107,11 @@ export const authService = {
   login: (username, password) => api.post('/auth/login', { username, password }),
   getMe: () => api.get('/auth/me'),
   changePassword: (data) => api.post('/auth/change-password', data),
+  getUsers: () => api.get('/auth/users'),
+  createUser: (data) => api.post('/auth/users', data),
+  updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
+  resetUserPassword: (id, new_password) => api.post(`/auth/users/${id}/reset-password`, { new_password }),
+  deleteUser: (id) => api.delete(`/auth/users/${id}`),
 };
 
 export default api;

@@ -34,6 +34,19 @@ try:
             conn.execute(text("ALTER TABLE additional_supplies ADD COLUMN created_at DATETIME"))
             conn.execute(text("UPDATE additional_supplies SET created_at = updated_at WHERE created_at IS NULL"))
             conn.commit()
+
+        res_users = conn.execute(text("PRAGMA table_info(users)"))
+        cols_users = [r[1] for r in res_users.fetchall()]
+        if cols_users:
+            if "can_delete" not in cols_users:
+                conn.execute(text("ALTER TABLE users ADD COLUMN can_delete BOOLEAN DEFAULT 1"))
+            if "can_edit" not in cols_users:
+                conn.execute(text("ALTER TABLE users ADD COLUMN can_edit BOOLEAN DEFAULT 1"))
+            if "read_only" not in cols_users:
+                conn.execute(text("ALTER TABLE users ADD COLUMN read_only BOOLEAN DEFAULT 0"))
+            if "allowed_modules" not in cols_users:
+                conn.execute(text("ALTER TABLE users ADD COLUMN allowed_modules TEXT DEFAULT 'dashboard,production,inventory,sales,accounting,config'"))
+            conn.commit()
 except Exception as e:
     pass
 
@@ -207,7 +220,11 @@ try:
                 hashed_password=hash_password("admin123"),
                 full_name="Administrador Prisma Lab",
                 role="ADMIN",
-                is_active=True
+                is_active=True,
+                can_delete=True,
+                can_edit=True,
+                read_only=False,
+                allowed_modules="dashboard,production,inventory,sales,accounting,config"
             )
             auth_db.add(initial_admin)
             auth_db.commit()
@@ -216,6 +233,17 @@ try:
             needs_update = False
             if not admin_user.is_active:
                 admin_user.is_active = True
+                needs_update = True
+            if admin_user.role != "ADMIN":
+                admin_user.role = "ADMIN"
+                needs_update = True
+            if not admin_user.can_delete or not admin_user.can_edit or admin_user.read_only:
+                admin_user.can_delete = True
+                admin_user.can_edit = True
+                admin_user.read_only = False
+                needs_update = True
+            if not admin_user.allowed_modules or "config" not in admin_user.allowed_modules:
+                admin_user.allowed_modules = "dashboard,production,inventory,sales,accounting,config"
                 needs_update = True
             if not verify_password("admin123", admin_user.hashed_password) and ":" not in (admin_user.hashed_password or ""):
                 admin_user.hashed_password = hash_password("admin123")

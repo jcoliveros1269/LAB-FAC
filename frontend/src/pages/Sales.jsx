@@ -29,8 +29,10 @@ import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
 import InvoicePrintView from '../components/InvoicePrintView';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
+import { useAuth } from '../context/AuthContext';
 
 export default function Sales() {
+  const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     return localStorage.getItem('prisma_lab_subtab_sales') || 'documents';
   });
@@ -872,13 +874,15 @@ export default function Sales() {
                             </button>
                           )}
 
-                          <button
-                            onClick={() => handleDeleteDocument(doc.id, doc.doc_number)}
-                            title="Eliminar Documento"
-                            className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-sm border border-rose-500/20 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteDocument(doc.id, doc.doc_number)}
+                              title="Eliminar Documento"
+                              className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-sm border border-rose-500/20 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

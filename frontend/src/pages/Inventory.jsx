@@ -4,8 +4,10 @@ import { toast } from 'sonner';
 import { inventoryService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 import { predictArticleCode } from '../utils/articleCodes';
+import { useAuth } from '../context/AuthContext';
 
 export default function Inventory() {
+  const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     return localStorage.getItem('prisma_lab_subtab_inventory') || 'materials';
   });
@@ -962,20 +964,24 @@ export default function Inventory() {
                       </td>
                       <td className="py-2 px-1 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenEditMaterial(item)}
-                            title="Editar Insumo"
-                            className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A] transition-colors"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteMaterial(item.id, item.name)}
-                            title="Eliminar Insumo"
-                            className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => handleOpenEditMaterial(item)}
+                              title="Editar Insumo"
+                              className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A] transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteMaterial(item.id, item.name)}
+                              title="Eliminar Insumo"
+                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1060,13 +1066,15 @@ export default function Inventory() {
                         </td>
                         <td className="py-2 px-1 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleDeleteProduct(p.id, p.name)}
-                              title="Eliminar Producto"
-                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteProduct(p.id, p.name)}
+                                title="Eliminar Producto"
+                                className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1149,20 +1157,24 @@ export default function Inventory() {
                         </td>
                         <td className="py-2 px-2 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleOpenEditSupply(s)}
-                              title="Editar Insumo"
-                              className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A] transition-colors"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSupply(s.id, s.name)}
-                              title="Eliminar Insumo"
-                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
+                            {canEdit && (
+                              <button
+                                onClick={() => handleOpenEditSupply(s)}
+                                title="Editar Insumo"
+                                className="p-1 bg-[#101010] hover:bg-[#222222] text-[#A0A0A0] hover:text-[#EAEAEA] rounded-sm border border-[#2A2A2A] transition-colors"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteSupply(s.id, s.name)}
+                                title="Eliminar Insumo"
+                                className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

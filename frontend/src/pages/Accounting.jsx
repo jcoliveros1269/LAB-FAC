@@ -3,6 +3,7 @@ import { BookOpen, DollarSign, RefreshCw, Layers, Search, Plus, X, Filter, List,
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { accountingService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
+import { useAuth } from '../context/AuthContext';
 
 const PUC_HIERARCHY_MAP = {
   // Clases (1 dígito)
@@ -57,6 +58,7 @@ const PUC_HIERARCHY_MAP = {
 };
 
 export default function Accounting() {
+  const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     return localStorage.getItem('prisma_lab_subtab_accounting') || 'journal';
   });
@@ -662,13 +664,15 @@ export default function Accounting() {
                           {row.credit > 0 ? `$${row.credit.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          <button
-                            onClick={() => handleDeleteJournalEntry(row.entry_number)}
-                            title={`Eliminar Asiento Contable #${row.entry_number}`}
-                            className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteJournalEntry(row.entry_number)}
+                              title={`Eliminar Asiento Contable #${row.entry_number}`}
+                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -914,13 +918,15 @@ export default function Accounting() {
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => handleDeletePuc(acc.id, acc.code, acc.name)}
-                              title={`Eliminar Cuenta PUC ${acc.code}`}
-                              className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeletePuc(acc.id, acc.code, acc.name)}
+                                title={`Eliminar Cuenta PUC ${acc.code}`}
+                                className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              </button>
+                            )}
                           </td>
                         </tr>
 
@@ -1214,13 +1220,15 @@ export default function Accounting() {
                         ${cf.balance.toLocaleString('es-CO')}
                       </td>
                       <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => handleDeleteCashFlow(cf.id, cf.description)}
-                          title="Eliminar Movimiento"
-                          className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDeleteCashFlow(cf.id, cf.description)}
+                            title="Eliminar Movimiento"
+                            className="p-1 bg-[#101010] hover:bg-rose-500/20 text-[#A0A0A0] hover:text-rose-400 rounded-sm border border-[#2A2A2A] transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
