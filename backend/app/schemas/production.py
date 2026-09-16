@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class FilamentUsage(BaseModel):
+    material_id: Optional[int] = None
     filament_type: str
     color: str
     grams: float

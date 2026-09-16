@@ -49,6 +49,19 @@ try:
             if "permissions_matrix" not in cols_users:
                 conn.execute(text("ALTER TABLE users ADD COLUMN permissions_matrix TEXT"))
             conn.commit()
+
+        # Auto-corregir escalas de multiplicadores de volumen si tienen valores viejos inflados (ej: 5.0)
+        try:
+            res_vd = conn.execute(text("SELECT id, suggested_price_multiplier FROM volume_discounts")).fetchall()
+            if any(r[1] and r[1] >= 3.5 for r in res_vd) or len(res_vd) == 0:
+                conn.execute(text("DELETE FROM volume_discounts"))
+                conn.execute(text("INSERT INTO volume_discounts (id, min_units, max_units, discount_percentage, suggested_price_multiplier) VALUES (1, 1, 4, 0.0, 2.8)"))
+                conn.execute(text("INSERT INTO volume_discounts (id, min_units, max_units, discount_percentage, suggested_price_multiplier) VALUES (2, 5, 9, 10.71, 2.5)"))
+                conn.execute(text("INSERT INTO volume_discounts (id, min_units, max_units, discount_percentage, suggested_price_multiplier) VALUES (3, 10, 49, 21.43, 2.2)"))
+                conn.execute(text("INSERT INTO volume_discounts (id, min_units, max_units, discount_percentage, suggested_price_multiplier) VALUES (4, 50, 9999, 28.57, 2.0)"))
+                conn.commit()
+        except Exception:
+            pass
 except Exception as e:
     pass
 

@@ -331,6 +331,7 @@ export default function Production({ setActiveTab }) {
     setLoading(true);
     try {
       const validFilaments = (formData.filaments || []).map(f => ({
+        material_id: f.material_id ? parseInt(f.material_id, 10) : null,
         filament_type: f.type,
         color: f.color,
         grams: parseFloat(f.grams) || 0.0
@@ -414,15 +415,15 @@ export default function Production({ setActiveTab }) {
         .join(' + ');
 
       const qty = parseInt(calcResult.quantity, 10) || 1;
-      const totalPrice = calcResult.sale_price_override && calcResult.sale_price_override > 0
+      const unitPrice = calcResult.sale_price_override && calcResult.sale_price_override > 0
         ? calcResult.sale_price_override
         : calcResult.suggested_price_margin;
       const discountVal = parseFloat(calcResult.discount_amount) || 0.0;
-      const subtotalVal = totalPrice + discountVal;
-      const unitPrice = subtotalVal / qty;
-      const unitCost = calcResult.total_unit_cost / qty;
-      const unitGrams = parseFloat(((calcResult.total_grams || 0) / qty).toFixed(2));
-      const unitHours = parseFloat(((calcResult.print_hours || 0) / qty).toFixed(2));
+      const subtotalVal = unitPrice * qty;
+      const totalPrice = Math.max(0, subtotalVal - discountVal);
+      const unitCost = calcResult.total_unit_cost;
+      const unitGrams = parseFloat((calcResult.total_grams || 0).toFixed(2));
+      const unitHours = parseFloat((calcResult.print_hours || 0).toFixed(2));
 
       const docPayload = {
         doc_number: `COT-${calcResult.project_code}`,
@@ -1078,21 +1079,21 @@ export default function Production({ setActiveTab }) {
                   <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
                     <div>
                       <span className="text-[10px] text-[#A0A0A0] uppercase font-medium">
-                        Costo Total Producción {calcResult.quantity > 1 ? `(${calcResult.quantity} und)` : ''}
+                        Costo Total Producción {calcResult.quantity > 1 ? `(${calcResult.quantity} unds)` : ''}
                       </span>
                       <p className="text-xl font-bold text-[#EAEAEA] font-mono">
-                        ${calcResult.total_unit_cost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
+                        ${((calcResult.total_unit_cost * (calcResult.quantity || 1))).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
                       </p>
                       {calcResult.quantity > 1 && (
                         <p className="text-[11px] text-[#888888] font-mono mt-0.5">
-                          Costo Unitario: <span className="text-[#EAEAEA] font-semibold">${(calcResult.total_unit_cost / calcResult.quantity).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
+                          Costo Unitario: <span className="text-[#EAEAEA] font-semibold">${calcResult.total_unit_cost.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                         </p>
                       )}
                     </div>
                     <div className="pt-2 border-t border-[#2A2A2A]">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-emerald-400 uppercase font-medium">
-                          Precio Sugerido {calcResult.quantity > 1 ? `(${calcResult.quantity} und)` : ''}
+                          Precio Sugerido {calcResult.quantity > 1 ? `(${calcResult.quantity} unds)` : ''}
                         </span>
                         {(calcResult.discount_percentage > 0 || calcResult.discount_amount > 0) && (
                           <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">
@@ -1101,11 +1102,11 @@ export default function Production({ setActiveTab }) {
                         )}
                       </div>
                       <p className="text-xl font-bold text-emerald-400 font-mono">
-                        ${calcResult.suggested_price_margin.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
+                        ${((calcResult.suggested_price_margin * (calcResult.quantity || 1))).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
                       </p>
                       {calcResult.quantity > 1 && (
                         <p className="text-[11px] text-emerald-500/80 font-mono mt-0.5">
-                          Precio Unitario: <span className="text-emerald-400 font-semibold">${(calcResult.suggested_price_margin / calcResult.quantity).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
+                          Precio Unitario: <span className="text-emerald-400 font-semibold">${calcResult.suggested_price_margin.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
                         </p>
                       )}
                     </div>

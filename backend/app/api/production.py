@@ -83,30 +83,34 @@ def calculate_3d_production(
     filaments_list = []
     if calc_input.filaments:
         for f in calc_input.filaments:
-            filaments_list.append((f.filament_type, f.color, f.grams))
+            filaments_list.append((f.filament_type, f.color, f.grams, getattr(f, 'material_id', None)))
     else:
         if calc_input.filament1_type and calc_input.filament1_grams > 0:
-            filaments_list.append((calc_input.filament1_type, calc_input.filament1_color, calc_input.filament1_grams))
+            filaments_list.append((calc_input.filament1_type, calc_input.filament1_color, calc_input.filament1_grams, None))
         if calc_input.filament2_type and calc_input.filament2_grams > 0:
-            filaments_list.append((calc_input.filament2_type, calc_input.filament2_color, calc_input.filament2_grams))
+            filaments_list.append((calc_input.filament2_type, calc_input.filament2_color, calc_input.filament2_grams, None))
         if calc_input.filament3_type and calc_input.filament3_grams > 0:
-            filaments_list.append((calc_input.filament3_type, calc_input.filament3_color, calc_input.filament3_grams))
+            filaments_list.append((calc_input.filament3_type, calc_input.filament3_color, calc_input.filament3_grams, None))
         if calc_input.filament4_type and calc_input.filament4_grams > 0:
-            filaments_list.append((calc_input.filament4_type, calc_input.filament4_color, calc_input.filament4_grams))
+            filaments_list.append((calc_input.filament4_type, calc_input.filament4_color, calc_input.filament4_grams, None))
 
-    for f_type, f_color, f_grams in filaments_list:
+    for f_type, f_color, f_grams, f_mat_id in filaments_list:
         total_grams += f_grams
-        mat_query = db.query(RawMaterial).filter(
-            RawMaterial.material_type.ilike(f_type.strip())
-        )
-        if f_color and f_color.strip():
-            mat = mat_query.filter(RawMaterial.color.ilike(f_color.strip())).order_by(RawMaterial.id.desc()).first()
-            if not mat:
-                mat = mat_query.filter(RawMaterial.color.ilike(f"%{f_color.strip()}%")).order_by(RawMaterial.id.desc()).first()
-        else:
-            mat = mat_query.order_by(RawMaterial.id.desc()).first()
+        mat = None
+        if f_mat_id:
+            mat = db.query(RawMaterial).filter(RawMaterial.id == f_mat_id).first()
+        if not mat:
+            mat_query = db.query(RawMaterial).filter(
+                RawMaterial.material_type.ilike(f_type.strip())
+            )
+            if f_color and f_color.strip():
+                mat = mat_query.filter(RawMaterial.color.ilike(f_color.strip())).order_by(RawMaterial.id.desc()).first()
+                if not mat:
+                    mat = mat_query.filter(RawMaterial.color.ilike(f"%{f_color.strip()}%")).order_by(RawMaterial.id.desc()).first()
+            else:
+                mat = mat_query.order_by(RawMaterial.id.desc()).first()
         
-        cost_g = mat.cost_per_g if mat else 65.0
+        cost_g = mat.cost_per_g if (mat and mat.cost_per_g and mat.cost_per_g > 0) else 65.0
         material_cost += f_grams * cost_g
 
         if calc_input.deduct_from_inventory and mat:
@@ -114,28 +118,39 @@ def calculate_3d_production(
             mat.current_stock_g = mat.initial_stock_g - mat.outgoing_stock_g
             db.add(mat)
 
-    # 2. Costos operacionales
+    # 2. Costos operacionales (Idénticos al Cotizador de Ventas / Sales.jsx)
     energy_cost = calc_input.print_hours * power_consumption_kw * electricity_cost
     depreciation_cost = calc_input.print_hours * depreciation_per_hour
-    labor_cost = calc_input.print_hours * labor_rate
     add_expenses = calc_input.additional_expenses or 0.0
 
-    total_unit_cost = material_cost + energy_cost + depreciation_cost + labor_cost + add_expenses
+    # Mano de obra 1.9% sobre costo directo base (igual que en Cotizaciones)
+    direct_base = material_cost + energy_cost + depreciation_cost + add_expenses
+    labor_cost = direct_base * 0.019
+
+    total_unit_cost = direct_base + labor_cost
     total_project_cost = total_unit_cost * calc_input.quantity
 
-    # 3. Aplicar Margen y Descuentos
-    base_suggested_price = total_unit_cost * default_margin_mult
+    # 3. Margen oficial de venta según escala de volumen (1-4: 2.8x | 5-9: 2.5x | >=10: 2.2x)
+    qty = calc_input.quantity or 1
+    base_margin = default_margin_mult if default_margin_mult >= 2.0 else (1.0 + default_margin_mult)
+    standard_margin = 2.2 if qty >= 10 else (2.5 if qty >= 5 else base_margin)
 
     vol_discount = db.query(VolumeDiscount).filter(
-        VolumeDiscount.min_units <= calc_input.quantity,
-        VolumeDiscount.max_units >= calc_input.quantity
+        VolumeDiscount.min_units <= qty,
+        VolumeDiscount.max_units >= qty
     ).first()
 
-    suggested_price = base_suggested_price
+    suggested_mult = standard_margin
     vol_discount_pct = 0.0
     if vol_discount and vol_discount.suggested_price_multiplier:
-        suggested_price = total_unit_cost * vol_discount.suggested_price_multiplier
-        vol_discount_pct = float(vol_discount.discount_percentage or 0.0)
+        if vol_discount.suggested_price_multiplier <= 3.2:
+            suggested_mult = vol_discount.suggested_price_multiplier
+            vol_discount_pct = float(vol_discount.discount_percentage or 0.0)
+        else:
+            suggested_mult = standard_margin
+
+    base_suggested_price = total_unit_cost * suggested_mult
+    suggested_price = base_suggested_price
 
     # Descuentos personalizados o por volumen
     discount_pct = float(calc_input.discount_percentage or 0.0)
