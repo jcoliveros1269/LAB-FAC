@@ -8,6 +8,8 @@ import {
   Sliders
 } from 'lucide-react';
 
+import { APP_VERSION, APP_BUILD_INFO } from '../version';
+
 export default function Sidebar({ activeTab, setActiveTab }) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,8 +59,22 @@ export default function Sidebar({ activeTab, setActiveTab }) {
 
       {/* Footer Status */}
       <div className="p-3 border-t border-[#2A2A2A] text-[10px] text-[#666666] flex items-center justify-between">
-        <p>Prisma Lab OS • Local</p>
-        <span className="text-[9px] text-emerald-400/80 font-mono">v1.2</span>
+        <p className="text-[#888888] font-medium">Prisma Lab OS • Local</p>
+        <button
+          type="button"
+          onClick={() => {
+            if ('caches' in window) {
+              caches.keys().then((names) => {
+                names.forEach((name) => caches.delete(name));
+              });
+            }
+            window.location.href = window.location.pathname + '?v=' + Date.now();
+          }}
+          title={`Versión instalada: ${APP_BUILD_INFO}. Haz clic para forzar recarga limpia sin caché.`}
+          className="text-[10px] text-emerald-400 hover:text-emerald-300 font-mono font-bold bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30 transition-all cursor-pointer shadow-sm active:scale-95"
+        >
+          {APP_VERSION}
+        </button>
       </div>
     </aside>
   );
