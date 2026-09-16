@@ -1254,7 +1254,7 @@ export default function Sales() {
                                   <label className="block text-[9px] text-[#666666]">Gramos (g)</label>
                                   <input
                                     type="number"
-                                    step="0.1"
+                                    step="any"
                                     value={fil.grams}
                                     onChange={(e) => handleFilamentChangeInPlate(plate.id, fil.id, 'grams', e.target.value)}
                                     onBlur={() => {
@@ -1330,6 +1330,7 @@ export default function Sales() {
                 <label className="block text-[#A0A0A0] mb-1">Costo Adicional (COP)</label>
                 <input
                   type="number"
+                  step="any"
                   value={quoteForm.additional_cost}
                   onChange={(e) => setQuoteForm({ ...quoteForm, additional_cost: e.target.value })}
                   onBlur={() => {
@@ -1410,7 +1411,7 @@ export default function Sales() {
                       type="number"
                       min="0"
                       max="100"
-                      step="0.5"
+                      step="any"
                       placeholder="0"
                       value={quoteForm.discount_percentage || ''}
                       onChange={(e) => {
@@ -1429,7 +1430,7 @@ export default function Sales() {
                     <input
                       type="number"
                       min="0"
-                      step="100"
+                      step="any"
                       placeholder="0"
                       value={quoteForm.discount_amount || ''}
                       onChange={(e) => {

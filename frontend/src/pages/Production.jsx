@@ -496,8 +496,8 @@ export default function Production({ setActiveTab }) {
                 <label className="block text-[#A0A0A0] mb-1">Horas de Impresión Total</label>
                 <input
                   type="number"
-                  step="0.1"
-                  min="0.1"
+                  step="any"
+                  min="0.01"
                   required
                   value={formData.print_hours}
                   onChange={(e) => setFormData({ ...formData, print_hours: e.target.value })}
@@ -672,7 +672,7 @@ export default function Production({ setActiveTab }) {
                           <label className="block text-[10px] text-[#666666]">Gramos (g)</label>
                           <input
                             type="number"
-                            step="0.1"
+                            step="any"
                             value={fil.grams}
                             onChange={(e) => handleFilamentChange(fil.id, 'grams', e.target.value)}
                             onBlur={() => {
@@ -723,7 +723,7 @@ export default function Production({ setActiveTab }) {
                       type="number"
                       min="0"
                       max="100"
-                      step="0.5"
+                      step="any"
                       placeholder="0"
                       value={formData.discount_percentage || ''}
                       onChange={(e) => {
@@ -742,7 +742,7 @@ export default function Production({ setActiveTab }) {
                     <input
                       type="number"
                       min="0"
-                      step="100"
+                      step="any"
                       placeholder="0"
                       value={formData.discount_amount || ''}
                       onChange={(e) => {
@@ -761,7 +761,7 @@ export default function Production({ setActiveTab }) {
                     <input
                       type="number"
                       min="0"
-                      step="100"
+                      step="any"
                       placeholder="Empaque, tornillería..."
                       value={formData.additional_expenses || ''}
                       onChange={(e) => setFormData({ ...formData, additional_expenses: parseFloat(e.target.value) || 0 })}
@@ -1199,7 +1199,7 @@ export default function Production({ setActiveTab }) {
                 <label className="block text-[#A0A0A0] mb-1">Horas de Impresión</label>
                 <input
                   type="number"
-                  step="0.1"
+                  step="any"
                   required
                   value={editFormData.print_hours}
                   onChange={(e) => setEditFormData({ ...editFormData, print_hours: e.target.value })}

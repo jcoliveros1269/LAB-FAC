@@ -1308,8 +1308,8 @@ export default function Inventory() {
                   <label className="block text-[10px] text-[#A0A0A0] mb-1">Stock Inicial (g)</label>
                   <input
                     type="number"
-                    step="1"
-                    min="1"
+                    step="any"
+                    min="0"
                     required
                     value={newMaterial.initial_stock_g}
                     onChange={(e) => handleNewMaterialStockOrCostChange('initial_stock_g', e.target.value)}
@@ -1321,7 +1321,7 @@ export default function Inventory() {
                   <label className="block text-[10px] text-[#A0A0A0] mb-1">Costo Total Bobina ($)</label>
                   <input
                     type="number"
-                    step="100"
+                    step="any"
                     min="0"
                     required
                     value={newMaterial.total_cost}
@@ -1334,7 +1334,7 @@ export default function Inventory() {
                   <label className="block text-[10px] text-emerald-400 font-semibold mb-1">Costo por Gramo ($/g)</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0"
                     required
                     value={newMaterial.cost_per_g}
@@ -1512,7 +1512,7 @@ export default function Inventory() {
                   <label className="block text-[10px] text-[#A0A0A0] mb-1">Stock Inicial (g)</label>
                   <input
                     type="number"
-                    step="1"
+                    step="any"
                     min="0"
                     required
                     value={editMaterialData.initial_stock_g}
@@ -1525,7 +1525,7 @@ export default function Inventory() {
                   <label className="block text-[10px] text-amber-400 mb-1">Salidas / Gastado (g)</label>
                   <input
                     type="number"
-                    step="1"
+                    step="any"
                     min="0"
                     required
                     value={editMaterialData.outgoing_stock_g}
@@ -1538,7 +1538,7 @@ export default function Inventory() {
                   <label className="block text-[10px] text-emerald-400 font-semibold mb-1">Costo por Gramo ($/g)</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0"
                     required
                     value={editMaterialData.cost_per_g}
@@ -1623,7 +1623,7 @@ export default function Inventory() {
                 <label className="block text-emerald-400 font-semibold mb-1">Costo Unitario ($ COP)</label>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   required
                   value={newSupply.unit_cost_cop}
@@ -1636,7 +1636,7 @@ export default function Inventory() {
                 <label className="block text-[#A0A0A0] mb-1">Stock (Und)</label>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   required
                   value={newSupply.stock_units}
@@ -1764,7 +1764,7 @@ export default function Inventory() {
                 <label className="block text-emerald-400 font-semibold mb-1">Costo Unitario ($ COP)</label>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   required
                   value={editSupplyData.unit_cost_cop}
@@ -1777,7 +1777,7 @@ export default function Inventory() {
                 <label className="block text-[#A0A0A0] mb-1">Stock Disponible (Und)</label>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   required
                   value={editSupplyData.stock_units}

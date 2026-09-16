@@ -215,7 +215,7 @@ export default function Config() {
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     value={cfg.value}
                     onChange={(e) => handleConfigChange(cfg.key, e.target.value)}
                     className="flex-1 bg-[#1A1A1A] border border-[#2A2A2A] text-xs text-[#EAEAEA] px-2.5 py-1 rounded-sm font-mono focus:border-slate-500"
@@ -334,7 +334,7 @@ export default function Config() {
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number"
-                                    step="0.5"
+                                    step="any"
                                     min="0"
                                     max="100"
                                     value={editDiscountData.discount_percentage}
@@ -348,7 +348,7 @@ export default function Config() {
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number"
-                                    step="0.05"
+                                    step="any"
                                     min="1"
                                     value={editDiscountData.suggested_price_multiplier}
                                     onChange={(e) => setEditDiscountData({ ...editDiscountData, suggested_price_multiplier: e.target.value })}
@@ -466,7 +466,7 @@ export default function Config() {
                 <label className="block text-[#A0A0A0] mb-1">Descuento (%)</label>
                 <input
                   type="number"
-                  step="0.5"
+                  step="any"
                   required
                   min="0"
                   max="100"
@@ -480,7 +480,7 @@ export default function Config() {
                 <label className="block text-[#A0A0A0] mb-1">Multiplicador Precio (x)</label>
                 <input
                   type="number"
-                  step="0.05"
+                  step="any"
                   required
                   min="1"
                   value={newDiscountData.suggested_price_multiplier}
