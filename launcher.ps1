@@ -305,6 +305,10 @@ function Update-System {
     if (Test-Path (Join-Path $frontendDir "package.json")) {
         Write-Host "         [*] Verificando modulos de Node.js en frontend..." -ForegroundColor DarkGray
         Push-Location $frontendDir
+        $viteCache = Join-Path $frontendDir "node_modules\.vite"
+        if (Test-Path $viteCache) {
+            Remove-Item $viteCache -Recurse -Force -ErrorAction SilentlyContinue
+        }
         cmd /c "npm install --silent" 2>&1 | Out-Null
         Pop-Location
     }
