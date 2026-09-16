@@ -10,10 +10,31 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// Interceptor para inyectar token de autenticación JWT
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('prisma_lab_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 // Interceptor para manejo global de errores
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      // Token inválido o expirado
+      const currentToken = localStorage.getItem('prisma_lab_token');
+      if (currentToken && !window.location.pathname.includes('/login')) {
+        localStorage.removeItem('prisma_lab_token');
+        localStorage.removeItem('prisma_lab_user');
+        window.location.reload();
+      }
+    }
     console.error('API Error:', error.response ? error.response.data : error.message);
     return Promise.reject(error);
   }
@@ -80,6 +101,12 @@ export const accountingService = {
   getMonthlyCashFlow: (params) => api.get('/accounting/reports/monthly-cashflow', { params }),
   getMonthlyPnl: (params) => api.get('/accounting/reports/monthly-pnl', { params }),
   getBalanceGeneral: (params) => api.get('/accounting/reports/balance-general', { params }),
+};
+
+export const authService = {
+  login: (username, password) => api.post('/auth/login', { username, password }),
+  getMe: () => api.get('/auth/me'),
+  changePassword: (data) => api.post('/auth/change-password', data),
 };
 
 export default api;

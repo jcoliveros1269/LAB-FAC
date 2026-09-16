@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, RefreshCw, Sun, Moon } from 'lucide-react';
+import { Calendar, RefreshCw, Sun, Moon, LogOut, User as UserIcon } from 'lucide-react';
 import api from '../services/api';
+import { useAuth, ROLE_LABELS } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 export default function Header({ activeTitle, theme, toggleTheme }) {
+  const { user, logout } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -24,11 +27,31 @@ export default function Header({ activeTitle, theme, toggleTheme }) {
     return () => clearInterval(interval);
   }, []);
 
+  const handleLogout = () => {
+    logout();
+    toast.info('Sesión cerrada correctamente');
+  };
+
   const currentDate = new Date().toLocaleDateString('es-ES', {
     weekday: 'short',
     month: 'short',
     day: 'numeric'
   });
+
+  const roleInfo = user?.role ? (ROLE_LABELS[user.role] || { label: user.role, color: 'slate' }) : null;
+
+  const getRoleBadgeClasses = (color) => {
+    switch (color) {
+      case 'emerald':
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+      case 'cyan':
+        return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
+      case 'amber':
+        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+      default:
+        return 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+    }
+  };
 
   return (
     <header className="bg-[#101010] border-b border-[#2A2A2A] px-4 sm:px-6 py-3 flex items-center justify-between gap-4 sticky top-0 z-30 transition-colors duration-200">
@@ -77,6 +100,38 @@ export default function Header({ activeTitle, theme, toggleTheme }) {
           <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'}`} />
           <span>{isOnline ? 'Conectado' : 'Sin API'}</span>
         </div>
+
+        {/* Perfil del Usuario y Logout */}
+        {user && (
+          <div className="flex items-center gap-2 pl-2 border-l border-[#2A2A2A]">
+            <div className="hidden lg:flex flex-col items-end leading-tight">
+              <span className="text-xs font-medium text-[#EAEAEA] truncate max-w-[130px]">
+                {user.full_name || user.username}
+              </span>
+              {roleInfo && (
+                <span
+                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded border font-semibold mt-0.5 ${getRoleBadgeClasses(
+                    roleInfo.color
+                  )}`}
+                >
+                  {roleInfo.label}
+                </span>
+              )}
+            </div>
+
+            <div className="w-7 h-7 rounded-full bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 flex items-center justify-center text-xs font-bold font-mono">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+
+            <button
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              className="p-1.5 text-rose-400/80 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-800/30 rounded-sm transition-colors cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

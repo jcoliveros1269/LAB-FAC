@@ -8,6 +8,7 @@ from app.api.inventory import router as inventory_router
 from app.api.production import router as production_router
 from app.api.sales import router as sales_router
 from app.api.accounting import router as accounting_router
+from app.api.auth import router as auth_router
 
 # Sincronizar esquemas de base de datos SQLite
 Base.metadata.create_all(bind=engine)
@@ -187,6 +188,25 @@ try:
     except Exception as e:
         db_init.rollback()
 
+    # 4. Auto-crear usuario administrador inicial si no existen usuarios
+    try:
+        from app.models.auth import User
+        from app.core.security import hash_password
+        admin_user = db_init.query(User).filter(User.username == "admin").first()
+        if not admin_user and db_init.query(User).count() == 0:
+            initial_admin = User(
+                username="admin",
+                hashed_password=hash_password("admin123"),
+                full_name="Administrador Prisma Lab",
+                role="ADMIN",
+                is_active=True
+            )
+            db_init.add(initial_admin)
+            db_init.commit()
+            print("[OK] Usuario inicial 'admin' creado exitosamente (Clave: admin123).")
+    except Exception as e:
+        db_init.rollback()
+
     db_init.close()
 except Exception as e:
     pass
@@ -212,6 +232,7 @@ app.include_router(inventory_router, prefix="/api")
 app.include_router(production_router, prefix="/api")
 app.include_router(sales_router, prefix="/api")
 app.include_router(accounting_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 
 @app.get("/")
 def read_root():

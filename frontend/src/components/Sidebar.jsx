@@ -9,9 +9,12 @@ import {
 } from 'lucide-react';
 
 import { APP_VERSION, APP_BUILD_INFO } from '../version';
+import { useAuth } from '../context/AuthContext';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
-  const menuItems = [
+  const { canAccess } = useAuth();
+
+  const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'production', label: 'Calculadora 3D', icon: Calculator },
     { id: 'inventory', label: 'Inventario', icon: Package },
@@ -19,6 +22,8 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { id: 'accounting', label: 'Contabilidad PUC', icon: BookOpen },
     { id: 'config', label: 'Configuración', icon: Sliders },
   ];
+
+  const menuItems = allMenuItems.filter(item => canAccess(item.id));
 
   return (
     <aside className="w-full md:w-60 bg-[#101010] border-r border-[#2A2A2A] flex flex-col shrink-0 md:sticky md:top-0 md:h-screen md:overflow-y-auto z-40">
