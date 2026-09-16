@@ -4,7 +4,7 @@ from app.models.inventory import RawMaterial, FinishedProduct
 from app.models.production import ProductionCalculation
 from app.models.sales import Customer, DocumentType, SalesDocumentItem
 from app.models.accounting import PucAccount, JournalEntry, CashFlowRecord
-from app.models.auth import User
+from app.models.auth import User, AuditLog
 
 __all__ = [
     "Base",
@@ -19,5 +19,6 @@ __all__ = [
     "PucAccount",
     "JournalEntry",
     "CashFlowRecord",
-    "User"
+    "User",
+    "AuditLog"
 ]

@@ -112,6 +112,7 @@ export const authService = {
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   resetUserPassword: (id, new_password) => api.post(`/auth/users/${id}/reset-password`, { new_password }),
   deleteUser: (id) => api.delete(`/auth/users/${id}`),
+  getAuditLogs: (params) => api.get('/auth/audit-logs', { params }),
 };
 
 export default api;

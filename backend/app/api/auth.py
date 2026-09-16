@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
-from app.models.auth import User
+from app.models.auth import User, AuditLog
 from app.schemas.auth import (
     UserLoginRequest, UserResponse, TokenResponse, ChangePasswordRequest,
-    UserCreateRequest, UserUpdateRequest, UserAdminResetPasswordRequest
+    UserCreateRequest, UserUpdateRequest, UserAdminResetPasswordRequest,
+    AuditLogResponse
 )
 from app.core.security import (
     hash_password,
@@ -18,6 +19,33 @@ from app.core.security import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
+
+def log_audit_event(
+    db: Session,
+    username: str,
+    module: str,
+    action: str,
+    description: str,
+    user_id: Optional[int] = None,
+    ip_address: Optional[str] = None
+):
+    """
+    Registra un evento trazable en la tabla de auditoría del ERP.
+    """
+    try:
+        entry = AuditLog(
+            user_id=user_id,
+            username=username or "sistema",
+            module=module.lower(),
+            action=action.upper(),
+            description=description,
+            ip_address=ip_address
+        )
+        db.add(entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[AUDIT ERROR] No se pudo guardar log de auditoría: {e}")
 
 @router.post("/login", response_model=TokenResponse)
 def login(request: UserLoginRequest, db: Session = Depends(get_db)):
@@ -80,6 +108,15 @@ def login(request: UserLoginRequest, db: Session = Depends(get_db)):
     }
     access_token = create_access_token(token_data)
 
+    log_audit_event(
+        db=db,
+        username=user.username,
+        module="auth",
+        action="LOGIN",
+        description=f"Inicio de sesión exitoso ({user.role})",
+        user_id=user.id
+    )
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -116,6 +153,15 @@ def change_password(
 
     current_user.hashed_password = hash_password(request.new_password)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="auth",
+        action="CHANGE_PASSWORD",
+        description=f"El usuario '{current_user.username}' actualizó su contraseña",
+        user_id=current_user.id
+    )
 
     return {"message": "Contraseña actualizada exitosamente"}
 
@@ -167,11 +213,22 @@ def create_user(
         can_delete=can_delete,
         can_edit=can_edit,
         read_only=read_only,
-        allowed_modules=allowed_modules
+        allowed_modules=allowed_modules,
+        permissions_matrix=request.permissions_matrix
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    log_audit_event(
+        db=db,
+        username=current_admin.username,
+        module="auth",
+        action="CREATE_USER",
+        description=f"Creó usuario '{new_user.username}' con rol '{new_user.role}'",
+        user_id=current_admin.id
+    )
+
     return new_user
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -224,6 +281,9 @@ def update_user(
     if request.allowed_modules is not None:
         user.allowed_modules = "dashboard,production,inventory,sales,accounting,config" if user.role == "ADMIN" else request.allowed_modules
 
+    if request.permissions_matrix is not None:
+        user.permissions_matrix = request.permissions_matrix
+
     if request.password:
         if len(request.password) < 4:
             raise HTTPException(
@@ -234,6 +294,16 @@ def update_user(
 
     db.commit()
     db.refresh(user)
+
+    log_audit_event(
+        db=db,
+        username=current_admin.username,
+        module="auth",
+        action="UPDATE_USER",
+        description=f"Actualizó configuración/permisos de '{user.username}' (Rol: {user.role})",
+        user_id=current_admin.id
+    )
+
     return user
 
 @router.post("/users/{user_id}/reset-password")
@@ -255,6 +325,16 @@ def reset_user_password(
 
     user.hashed_password = hash_password(request.new_password)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_admin.username,
+        module="auth",
+        action="PASSWORD_RESET",
+        description=f"Restableció contraseña para el usuario '{user.username}'",
+        user_id=current_admin.id
+    )
+
     return {"message": f"Contraseña del usuario '{user.username}' actualizada exitosamente."}
 
 @router.delete("/users/{user_id}")
@@ -279,6 +359,42 @@ def delete_user(
             detail="No se puede eliminar la cuenta del administrador principal ni tu propia cuenta activa."
         )
 
+    deleted_username = user.username
     db.delete(user)
     db.commit()
-    return {"message": f"Usuario '{user.username}' eliminado correctamente."}
+
+    log_audit_event(
+        db=db,
+        username=current_admin.username,
+        module="auth",
+        action="DELETE_USER",
+        description=f"Eliminó el usuario '{deleted_username}'",
+        user_id=current_admin.id
+    )
+
+    return {"message": f"Usuario '{deleted_username}' eliminado correctamente."}
+
+# ============================================================================
+# BITÁCORA DE AUDITORÍA (Solo ADMIN)
+# ============================================================================
+
+@router.get("/audit-logs", response_model=List[AuditLogResponse])
+def get_audit_logs(
+    limit: int = 150,
+    module: Optional[str] = None,
+    action: Optional[str] = None,
+    username: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_role(["ADMIN"]))
+):
+    """
+    Obtiene los registros de auditoría del ERP ordenados del más reciente al más antiguo.
+    """
+    query = db.query(AuditLog)
+    if module:
+        query = query.filter(AuditLog.module == module.lower())
+    if action:
+        query = query.filter(AuditLog.action == action.upper())
+    if username:
+        query = query.filter(func.lower(AuditLog.username) == username.lower())
+    return query.order_by(AuditLog.created_at.desc()).limit(limit).all()

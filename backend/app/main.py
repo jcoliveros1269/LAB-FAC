@@ -46,6 +46,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN read_only BOOLEAN DEFAULT 0"))
             if "allowed_modules" not in cols_users:
                 conn.execute(text("ALTER TABLE users ADD COLUMN allowed_modules TEXT DEFAULT 'dashboard,production,inventory,sales,accounting,config'"))
+            if "permissions_matrix" not in cols_users:
+                conn.execute(text("ALTER TABLE users ADD COLUMN permissions_matrix TEXT"))
             conn.commit()
 except Exception as e:
     pass

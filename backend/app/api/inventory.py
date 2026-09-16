@@ -6,6 +6,9 @@ from datetime import datetime
 from app.database import get_db
 from app.models.inventory import RawMaterial, FinishedProduct, AdditionalSupply
 from app.models.accounting import JournalEntry
+from app.models.auth import User
+from app.core.security import require_permission
+from app.api.auth import log_audit_event
 from app.utils import generate_article_code
 from app.schemas.inventory import (
     RawMaterialResponse, RawMaterialCreate, RawMaterialUpdate,
@@ -99,7 +102,11 @@ def get_raw_materials(
     return query.order_by(RawMaterial.id.asc()).all()
 
 @router.post("/materials", response_model=RawMaterialResponse)
-def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_db)):
+def create_raw_material(
+    material: RawMaterialCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("inventory", "write"))
+):
     mat_dict = material.model_dump()
     if not mat_dict.get("article_code"):
         mat_dict["article_code"] = generate_article_code(
@@ -130,8 +137,8 @@ def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_d
             entry_number=entry_num,
             entry_date=custom_date,
             puc_code="140505",
-            account_name="Inventario de Materias Primas / Filamentos",
-            description=f"Ingreso/Compra Filamento {db_material.material_type} {db_material.color} ({db_material.initial_stock_g}g)",
+            account_name="Inventario de Materias Primas",
+            description=f"Compra Filamento {db_material.material_type} {db_material.color} ({db_material.initial_stock_g}g)",
             debit=round(total_value, 2),
             credit=0.0
         )
@@ -147,6 +154,15 @@ def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_d
         db.add(j_debit)
         db.add(j_credit)
         db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="inventory",
+        action="CREATE_MATERIAL",
+        description=f"Registró materia prima: {db_material.material_type} {db_material.color} ({db_material.code})",
+        user_id=current_user.id
+    )
 
     return db_material
 
@@ -188,12 +204,28 @@ def update_raw_material(material_id: int, material_update: RawMaterialUpdate, db
     return db_material
 
 @router.delete("/materials/{material_id}")
-def delete_raw_material(material_id: int, db: Session = Depends(get_db)):
+def delete_raw_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("inventory", "delete"))
+):
     db_material = db.query(RawMaterial).filter(RawMaterial.id == material_id).first()
     if not db_material:
         raise HTTPException(status_code=404, detail="Material no encontrado")
+    
+    mat_desc = f"{db_material.material_type} {db_material.color} ({db_material.code})"
     db.delete(db_material)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="inventory",
+        action="DELETE_MATERIAL",
+        description=f"Eliminó materia prima: {mat_desc}",
+        user_id=current_user.id
+    )
+
     return {"message": "Material eliminado correctamente"}
 
 # --- PRODUCTOS TERMINADOS ---
@@ -238,12 +270,28 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
     return db_product
 
 @router.delete("/products/{product_id}")
-def delete_finished_product(product_id: int, db: Session = Depends(get_db)):
+def delete_finished_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("inventory", "delete"))
+):
     product = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto terminado no encontrado")
+    
+    prod_name = product.name
     db.delete(product)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="inventory",
+        action="DELETE_PRODUCT",
+        description=f"Eliminó producto terminado: {prod_name}",
+        user_id=current_user.id
+    )
+
     return {"message": "Producto terminado eliminado correctamente"}
 
 # --- MATERIAL ADICIONAL: PAPELERÍA & MANTENIMIENTO ---
@@ -307,10 +355,26 @@ def update_additional_supply(supply_id: int, supply_update: AdditionalSupplyUpda
     return db_supply
 
 @router.delete("/additional-supplies/{supply_id}")
-def delete_additional_supply(supply_id: int, db: Session = Depends(get_db)):
+def delete_additional_supply(
+    supply_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("inventory", "delete"))
+):
     db_supply = db.query(AdditionalSupply).filter(AdditionalSupply.id == supply_id).first()
     if not db_supply:
         raise HTTPException(status_code=404, detail="Insumo adicional no encontrado")
+    
+    supply_info = f"{db_supply.name} ({db_supply.item_type})"
     db.delete(db_supply)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="inventory",
+        action="DELETE_SUPPLY",
+        description=f"Eliminó insumo adicional: {supply_info}",
+        user_id=current_user.id
+    )
+
     return {"message": "Insumo adicional eliminado correctamente"}

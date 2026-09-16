@@ -166,3 +166,59 @@ def require_role(allowed_roles: List[str]):
             )
         return current_user
     return role_checker
+
+def check_user_permission(user: User, module: str, action: str) -> bool:
+    """
+    Evalúa si un usuario tiene autorización para ejecutar una acción ('read', 'write', 'delete')
+    en un módulo específico ('dashboard', 'production', 'inventory', 'sales', 'accounting', 'config').
+    """
+    if not user or not user.is_active:
+        return False
+
+    # Administrador siempre tiene acceso irrestricto
+    if user.role == "ADMIN":
+        return True
+
+    mod = module.lower().strip()
+    act = action.lower().strip()
+
+    # Si tiene matriz granular configurada en JSON:
+    if user.permissions_matrix:
+        try:
+            matrix = json.loads(user.permissions_matrix)
+            if isinstance(matrix, dict) and mod in matrix:
+                mod_perms = matrix[mod]
+                if isinstance(mod_perms, dict):
+                    return bool(mod_perms.get(act, False))
+        except Exception:
+            pass
+
+    # Fallback a los flags globales y módulos permitidos:
+    allowed_list = [m.strip().lower() for m in (user.allowed_modules or "").split(",") if m.strip()]
+    if mod not in allowed_list:
+        return False
+
+    if act == "read":
+        return True
+    elif act == "write":
+        return bool(user.can_edit and not user.read_only)
+    elif act == "delete":
+        return bool(user.can_delete and not user.read_only)
+
+    return False
+
+def require_permission(module: str, action: str):
+    """
+    Dependencia FastAPI que verifica permisos específicos por módulo y acción.
+    Ejemplo: Depends(require_permission("inventory", "delete"))
+    """
+    def permission_checker(current_user: User = Depends(get_current_user)) -> User:
+        if not check_user_permission(current_user, module, action):
+            action_names = {"read": "lectura", "write": "creación/edición", "delete": "eliminación"}
+            act_es = action_names.get(action.lower(), action)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acceso denegado: No tienes permiso de {act_es} en el módulo '{module}'."
+            )
+        return current_user
+    return permission_checker

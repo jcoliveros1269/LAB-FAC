@@ -47,6 +47,41 @@ const PRESETS = {
   }
 };
 
+const ROLE_MATRICES = {
+  ADMIN: {
+    dashboard: { read: true, write: true, delete: true },
+    production: { read: true, write: true, delete: true },
+    inventory: { read: true, write: true, delete: true },
+    sales: { read: true, write: true, delete: true },
+    accounting: { read: true, write: true, delete: true },
+    config: { read: true, write: true, delete: true },
+  },
+  OPERATOR: {
+    dashboard: { read: true, write: false, delete: false },
+    production: { read: true, write: true, delete: false },
+    inventory: { read: true, write: true, delete: false },
+    sales: { read: false, write: false, delete: false },
+    accounting: { read: false, write: false, delete: false },
+    config: { read: false, write: false, delete: false },
+  },
+  SELLER: {
+    dashboard: { read: true, write: false, delete: false },
+    production: { read: false, write: false, delete: false },
+    inventory: { read: true, write: false, delete: false },
+    sales: { read: true, write: true, delete: false },
+    accounting: { read: false, write: false, delete: false },
+    config: { read: false, write: false, delete: false },
+  },
+  CUSTOM: {
+    dashboard: { read: true, write: false, delete: false },
+    production: { read: true, write: true, delete: false },
+    inventory: { read: true, write: true, delete: false },
+    sales: { read: true, write: false, delete: false },
+    accounting: { read: false, write: false, delete: false },
+    config: { read: false, write: false, delete: false },
+  }
+};
+
 export default function UserManagement() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
@@ -64,7 +99,8 @@ export default function UserManagement() {
     can_delete: false,
     can_edit: true,
     read_only: false,
-    allowed_modules: ['dashboard', 'production', 'inventory']
+    allowed_modules: ['dashboard', 'production', 'inventory'],
+    permissions_matrix: ROLE_MATRICES.OPERATOR
   });
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -98,13 +134,15 @@ export default function UserManagement() {
   const handleRolePreset = (roleKey) => {
     const preset = PRESETS[roleKey] || PRESETS.CUSTOM;
     const modulesArr = preset.allowed_modules.split(',').map(m => m.trim());
+    const matrix = ROLE_MATRICES[roleKey] || ROLE_MATRICES.CUSTOM;
     setFormData(prev => ({
       ...prev,
       role: roleKey,
       can_delete: preset.can_delete,
       can_edit: preset.can_edit,
       read_only: preset.read_only,
-      allowed_modules: modulesArr
+      allowed_modules: modulesArr,
+      permissions_matrix: JSON.parse(JSON.stringify(matrix))
     }));
   };
 
@@ -120,7 +158,8 @@ export default function UserManagement() {
       can_delete: false,
       can_edit: true,
       read_only: false,
-      allowed_modules: ['dashboard', 'production', 'inventory']
+      allowed_modules: ['dashboard', 'production', 'inventory'],
+      permissions_matrix: JSON.parse(JSON.stringify(ROLE_MATRICES.OPERATOR))
     });
     setShowPassword(false);
     setModalOpen(true);
@@ -130,6 +169,26 @@ export default function UserManagement() {
   const handleOpenEdit = (u) => {
     setEditingUser(u);
     const modulesArr = (u.allowed_modules || '').split(',').map(m => m.trim()).filter(Boolean);
+    let matrix = null;
+    if (u.permissions_matrix) {
+      try {
+        matrix = JSON.parse(u.permissions_matrix);
+      } catch (e) {
+        matrix = null;
+      }
+    }
+    if (!matrix) {
+      matrix = JSON.parse(JSON.stringify(ROLE_MATRICES[u.role] || ROLE_MATRICES.CUSTOM));
+      MODULE_OPTIONS.forEach(mod => {
+        const allowed = modulesArr.includes(mod.id);
+        matrix[mod.id] = {
+          read: allowed,
+          write: allowed && u.can_edit && !u.read_only,
+          delete: allowed && u.can_delete && !u.read_only
+        };
+      });
+    }
+
     setFormData({
       username: u.username,
       password: '',
@@ -139,10 +198,45 @@ export default function UserManagement() {
       can_delete: Boolean(u.can_delete),
       can_edit: Boolean(u.can_edit),
       read_only: Boolean(u.read_only),
-      allowed_modules: modulesArr.length > 0 ? modulesArr : ['dashboard']
+      allowed_modules: modulesArr.length > 0 ? modulesArr : ['dashboard'],
+      permissions_matrix: matrix
     });
     setShowPassword(false);
     setModalOpen(true);
+  };
+
+  // Cambio en celda de la Matriz de Permisos
+  const handleMatrixChange = (modId, action) => {
+    if (formData.role === 'ADMIN') return;
+    setFormData(prev => {
+      const currentMatrix = { ...(prev.permissions_matrix || ROLE_MATRICES.CUSTOM) };
+      const modPerms = { ...(currentMatrix[modId] || { read: false, write: false, delete: false }) };
+      const newVal = !modPerms[action];
+      modPerms[action] = newVal;
+
+      if (action !== 'read' && newVal) {
+        modPerms.read = true;
+      }
+      if (action === 'read' && !newVal) {
+        modPerms.write = false;
+        modPerms.delete = false;
+      }
+
+      currentMatrix[modId] = modPerms;
+
+      const newAllowed = Object.keys(currentMatrix).filter(m => currentMatrix[m]?.read);
+      const anyDelete = Object.values(currentMatrix).some(p => p?.delete);
+      const anyWrite = Object.values(currentMatrix).some(p => p?.write);
+
+      return {
+        ...prev,
+        role: 'CUSTOM',
+        permissions_matrix: currentMatrix,
+        allowed_modules: newAllowed,
+        can_delete: anyDelete,
+        can_edit: anyWrite
+      };
+    });
   };
 
   // Toggle Módulo
@@ -184,6 +278,10 @@ export default function UserManagement() {
         ? 'dashboard,production,inventory,sales,accounting,config'
         : formData.allowed_modules.join(',');
 
+      const matrixStr = JSON.stringify(
+        formData.role === 'ADMIN' ? ROLE_MATRICES.ADMIN : (formData.permissions_matrix || ROLE_MATRICES.CUSTOM)
+      );
+
       if (editingUser) {
         // Actualizar
         const payload = {
@@ -194,6 +292,7 @@ export default function UserManagement() {
           can_edit: formData.role === 'ADMIN' ? true : formData.can_edit,
           read_only: formData.role === 'ADMIN' ? false : formData.read_only,
           allowed_modules: modulesStr,
+          permissions_matrix: matrixStr,
         };
         if (formData.password.trim()) {
           payload.password = formData.password.trim();
@@ -213,6 +312,7 @@ export default function UserManagement() {
           can_edit: formData.role === 'ADMIN' ? true : formData.can_edit,
           read_only: formData.role === 'ADMIN' ? false : formData.read_only,
           allowed_modules: modulesStr,
+          permissions_matrix: matrixStr,
         };
 
         await authService.createUser(payload);
@@ -450,6 +550,11 @@ export default function UserManagement() {
                               }`}>
                                 {u.can_delete ? 'Puede Borrar' : 'Sin Borrado'}
                               </span>
+                              {u.permissions_matrix && (
+                                <span className="px-1.5 py-0.5 text-[9px] rounded font-mono bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
+                                  Matriz Granular
+                                </span>
+                              )}
                             </>
                           )}
                         </div>
@@ -508,7 +613,7 @@ export default function UserManagement() {
       {/* MODAL CREAR / EDITAR USUARIO */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#161616] border border-[#2D2D2D] rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6">
+          <div className="bg-[#161616] border border-[#2D2D2D] rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6">
             <div className="flex items-center justify-between pb-4 border-b border-[#2A2A2A]">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-cyan-950/60 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
@@ -687,36 +792,76 @@ export default function UserManagement() {
                     </label>
                   </div>
 
-                  {/* Módulos Permitidos */}
-                  <div className="space-y-1.5 pt-2">
-                    <div className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                      Módulos Permitidos
+                  {/* Matriz Granular de Permisos por Módulo */}
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                        Matriz de Permisos por Módulo
+                      </div>
+                      <span className="text-[10px] text-cyan-400 font-mono">
+                        Control Granular
+                      </span>
                     </div>
-                    <div className="space-y-1">
-                      {MODULE_OPTIONS.map((m) => {
-                        const isChecked = formData.allowed_modules.includes(m.id);
-                        return (
-                          <label
-                            key={m.id}
-                            className={`flex items-start gap-2.5 p-2 rounded border cursor-pointer transition-colors ${
-                              isChecked
-                                ? 'bg-[#1D242E] border-cyan-500/40 text-white'
-                                : 'bg-[#181818] border-[#2A2A2A] text-[#808080] hover:bg-[#202020]'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleModule(m.id)}
-                              className="mt-0.5 rounded bg-[#2A2A2A] border-[#3A3A3A] text-cyan-500 focus:ring-0"
-                            />
-                            <div>
-                              <div className="text-xs font-semibold">{m.label}</div>
-                              <div className="text-[10px] text-[#7E7E7E]">{m.desc}</div>
-                            </div>
-                          </label>
-                        );
-                      })}
+
+                    <div className="border border-[#2D2D2D] rounded-lg overflow-hidden bg-[#141414]">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#1C1C1C] text-[#8E8E8E] font-mono text-[10px] uppercase border-b border-[#2D2D2D]">
+                          <tr>
+                            <th className="py-2.5 px-3">Módulo</th>
+                            <th className="py-2.5 px-2 text-center text-cyan-400">Lectura (Ver)</th>
+                            <th className="py-2.5 px-2 text-center text-emerald-400">Crear / Editar</th>
+                            <th className="py-2.5 px-2 text-center text-rose-400">Eliminar</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#242424]">
+                          {MODULE_OPTIONS.map((m) => {
+                            const modPerms = formData.permissions_matrix?.[m.id] || { read: false, write: false, delete: false };
+                            const isAdminRole = formData.role === 'ADMIN';
+
+                            return (
+                              <tr key={m.id} className="hover:bg-[#1A1A1A] transition-colors">
+                                <td className="py-2.5 px-3">
+                                  <div className="font-semibold text-white text-xs">{m.label}</div>
+                                  <div className="text-[10px] text-[#707070]">{m.desc}</div>
+                                </td>
+
+                                {/* Lectura */}
+                                <td className="py-2.5 px-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    disabled={isAdminRole}
+                                    checked={isAdminRole || Boolean(modPerms.read)}
+                                    onChange={() => handleMatrixChange(m.id, 'read')}
+                                    className="rounded bg-[#222] border-[#3E3E3E] text-cyan-500 focus:ring-0 cursor-pointer disabled:opacity-60"
+                                  />
+                                </td>
+
+                                {/* Escritura */}
+                                <td className="py-2.5 px-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    disabled={isAdminRole || formData.read_only}
+                                    checked={isAdminRole || (!formData.read_only && Boolean(modPerms.write))}
+                                    onChange={() => handleMatrixChange(m.id, 'write')}
+                                    className="rounded bg-[#222] border-[#3E3E3E] text-emerald-500 focus:ring-0 cursor-pointer disabled:opacity-60"
+                                  />
+                                </td>
+
+                                {/* Eliminación */}
+                                <td className="py-2.5 px-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    disabled={isAdminRole || formData.read_only}
+                                    checked={isAdminRole || (!formData.read_only && Boolean(modPerms.delete))}
+                                    onChange={() => handleMatrixChange(m.id, 'delete')}
+                                    className="rounded bg-[#222] border-[#3E3E3E] text-rose-500 focus:ring-0 cursor-pointer disabled:opacity-60"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>

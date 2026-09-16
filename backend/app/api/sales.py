@@ -7,6 +7,9 @@ from app.database import get_db
 from app.models.sales import Customer, DocumentType, SalesDocumentItem
 from app.models.accounting import JournalEntry
 from app.models.inventory import FinishedProduct
+from app.models.auth import User
+from app.core.security import require_permission
+from app.api.auth import log_audit_event
 from app.schemas.sales import (
     CustomerResponse, CustomerCreate,
     SalesDocumentResponse, SalesDocumentCreate
@@ -66,7 +69,11 @@ def get_sales_documents(doc_type: str = None, db: Session = Depends(get_db)):
     return query.order_by(DocumentType.id.desc()).all()
 
 @router.post("/documents", response_model=SalesDocumentResponse)
-def create_sales_document(doc: SalesDocumentCreate, db: Session = Depends(get_db)):
+def create_sales_document(
+    doc: SalesDocumentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "write"))
+):
     db_doc = DocumentType(
         doc_number=doc.doc_number,
         doc_type=doc.doc_type.upper(),
@@ -147,6 +154,16 @@ def create_sales_document(doc: SalesDocumentCreate, db: Session = Depends(get_db
     db.commit()
     db.expire_all()
     db.refresh(db_doc)
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="sales",
+        action="CREATE_DOCUMENT",
+        description=f"Generó {db_doc.doc_type} #{db_doc.doc_number} (Total: ${db_doc.total:,.2f})",
+        user_id=current_user.id
+    )
+
     return db_doc
 
 @router.post("/documents/{doc_id}/convert-to-invoice", response_model=SalesDocumentResponse)
@@ -222,14 +239,29 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     return doc
 
 @router.delete("/documents/{doc_id}")
-def delete_sales_document(doc_id: int, db: Session = Depends(get_db)):
+def delete_sales_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "delete"))
+):
     doc = db.query(DocumentType).filter(DocumentType.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
+    doc_info = f"{doc.doc_type} #{doc.doc_number}"
     # Eliminar items asociados al documento
     db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).delete()
     db.delete(doc)
     db.commit()
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="sales",
+        action="DELETE_DOCUMENT",
+        description=f"Eliminó documento: {doc_info}",
+        user_id=current_user.id
+    )
+
     return {"message": "Documento eliminado correctamente"}
 

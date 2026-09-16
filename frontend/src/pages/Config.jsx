@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, RefreshCw, Zap, Database, Download, Search, X, Plus, Edit3, Trash2, Check, Percent, Users, Sliders, Shield } from 'lucide-react';
+import { Settings, Save, RefreshCw, Zap, Database, Download, Search, X, Plus, Edit3, Trash2, Check, Percent, Users, Sliders, Shield, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { configService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import UserManagement from '../components/UserManagement';
+import AuditLogViewer from '../components/AuditLogViewer';
 
 export default function Config() {
   const { user } = useAuth();
@@ -199,11 +200,25 @@ export default function Config() {
             <Users className="w-3.5 h-3.5 text-cyan-400" />
             <span>Usuarios & Control de Accesos</span>
           </button>
+
+          <button
+            onClick={() => setActiveSubTab('audit')}
+            className={`px-3 py-1.5 rounded-sm text-xs font-mono flex items-center gap-2 transition-all ${
+              activeSubTab === 'audit'
+                ? 'bg-gradient-to-r from-amber-950 to-orange-950 text-amber-300 font-semibold border border-amber-500/40 shadow-sm shadow-amber-950/50'
+                : 'text-[#8E8E8E] hover:text-white hover:bg-[#1E1E1E]'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-amber-400" />
+            <span>Bitácora de Auditoría</span>
+          </button>
         </div>
       )}
 
       {activeSubTab === 'users' && user?.role === 'ADMIN' ? (
         <UserManagement />
+      ) : activeSubTab === 'audit' && user?.role === 'ADMIN' ? (
+        <AuditLogViewer />
       ) : (
         <>
           {/* Respaldo */}

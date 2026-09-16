@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     can_edit: bool = True
     read_only: bool = False
     allowed_modules: str = "dashboard,production,inventory,sales,accounting,config"
+    permissions_matrix: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -40,6 +41,7 @@ class UserCreateRequest(BaseModel):
     can_edit: bool = Field(True, description="Permiso de editar registros")
     read_only: bool = Field(False, description="Modo solo lectura")
     allowed_modules: str = Field("dashboard,production,inventory", description="Módulos autorizados separados por coma")
+    permissions_matrix: Optional[str] = Field(None, description="Matriz JSON con permisos {modulo: {read, write, delete}}")
 
 class UserUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
@@ -49,7 +51,21 @@ class UserUpdateRequest(BaseModel):
     can_edit: Optional[bool] = None
     read_only: Optional[bool] = None
     allowed_modules: Optional[str] = None
+    permissions_matrix: Optional[str] = None
     password: Optional[str] = Field(None, min_length=4, max_length=100)
 
 class UserAdminResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=4, max_length=100, description="Nueva contraseña asignada por el administrador")
+
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    username: str
+    module: str
+    action: str
+    description: str
+    ip_address: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
