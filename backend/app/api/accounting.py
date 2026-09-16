@@ -103,6 +103,50 @@ def delete_journal_entry(entry_number: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"Asiento contable #{entry_number} eliminado correctamente"}
 
+# --- MAPEO CONTABLE INTELIGENTE FLUJO DE CAJA -> PUC ---
+
+def map_cashflow_to_puc(category: str, description: str, is_income: bool):
+    """
+    Mapea de forma inteligente la categoría y descripción de un movimiento de Flujo de Caja
+    a su respectiva cuenta contable PUC (Partida Doble):
+    - Equipos / Maquinaria / Impresoras -> 152005 (Activo Fijo: Maquinaria y Equipo)
+    - Insumos / Filamentos / Materiales -> 140505 (Activo: Inventario de Materias Primas)
+    - Capital / Aportes / Inversión Inicial -> 311505 (Patrimonio: Aportes Sociales / Capital Inicial)
+    - Mano de Obra / Salarios -> 510506 (Gasto: Sueldos y Mano de Obra)
+    - Servicios Públicos / Energía -> 513528 (Gasto: Servicios de Energía Eléctrica)
+    - Ventas Directas -> 413505 (Ingreso: Comercio al por Mayor y Menor - Ventas 3D)
+    - Otros Gastos -> 513528 (Gasto: Servicios y Gastos Operacionales)
+    """
+    cat_str = (category or "").lower().strip()
+    desc_str = (description or "").lower().strip()
+    full_text = f"{cat_str} {desc_str}"
+
+    if is_income:
+        # Entrada a Caja General (110505 Debe). Contrapartida en Haber (Crédito):
+        if any(k in full_text for k in ["capital", "aporte", "inversion", "inversión", "socio", "patrimonio"]):
+            return "311505", "Aportes Sociales / Capital Inicial"
+        elif any(k in full_text for k in ["equipo", "maquinaria", "impresora"]):
+            return "152005", "Maquinaria y Equipo (Bambu Lab A1)"
+        elif any(k in full_text for k in ["reembolso", "devolucion"]):
+            return "513528", "Servicios y Gastos Operacionales"
+        else:
+            return "413505", "Comercio al por Mayor y Menor (Ventas 3D)"
+    else:
+        # Salida de Caja General (110505 Haber). Contrapartida en Debe (Débito):
+        if any(k in full_text for k in ["equipo", "maquinaria", "impresora", "activo", "herramienta"]):
+            return "152005", "Maquinaria y Equipo (Bambu Lab A1)"
+        elif any(k in full_text for k in ["materia", "insumo", "filamento", "bobina", "resina"]):
+            return "140505", "Inventario de Materias Primas"
+        elif any(k in full_text for k in ["sueldo", "salario", "mano de obra", "nomina", "nómina", "operario"]):
+            return "510506", "Sueldos y Mano de Obra"
+        elif any(k in full_text for k in ["energia", "energía", "luz", "electricidad", "servicio publico", "servicios públicos"]):
+            return "513528", "Servicios de Energía Eléctrica"
+        elif any(k in full_text for k in ["capital", "aporte", "retiro socio", "devolucion aporte"]):
+            return "311505", "Aportes Sociales / Capital Inicial"
+        else:
+            return "513528", "Servicios y Gastos Operacionales"
+
+
 # --- FLUJO DE CAJA ---
 
 @router.get("/cashflow", response_model=List[CashFlowRecordResponse])
@@ -130,11 +174,12 @@ def create_cash_flow_record(record: CashFlowRecordCreate, db: Session = Depends(
     db.commit()
     db.refresh(db_record)
 
-    # Sincronización Automática con Libro Diario (Partida Doble)
+    # Sincronización Automática con Libro Diario (Partida Doble Inteligente)
     last_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
     next_entry_num = (last_entry.entry_number if last_entry else 0) + 1
 
     if record.income > 0:
+        puc_code, acc_name = map_cashflow_to_puc(record.category, record.description, is_income=True)
         j_debit = JournalEntry(
             entry_number=next_entry_num,
             entry_date=record.record_date or datetime.utcnow(),
@@ -147,8 +192,8 @@ def create_cash_flow_record(record: CashFlowRecordCreate, db: Session = Depends(
         j_credit = JournalEntry(
             entry_number=next_entry_num,
             entry_date=record.record_date or datetime.utcnow(),
-            puc_code="413505",
-            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+            puc_code=puc_code,
+            account_name=acc_name,
             description=f"Flujo de Caja (Ingreso): {record.description}",
             debit=0.0,
             credit=round(record.income, 2)
@@ -157,11 +202,12 @@ def create_cash_flow_record(record: CashFlowRecordCreate, db: Session = Depends(
         db.add(j_credit)
         db.commit()
     elif record.credit > 0:
+        puc_code, acc_name = map_cashflow_to_puc(record.category, record.description, is_income=False)
         j_debit = JournalEntry(
             entry_number=next_entry_num,
             entry_date=record.record_date or datetime.utcnow(),
-            puc_code="513528",
-            account_name="Servicios y Gastos Operacionales",
+            puc_code=puc_code,
+            account_name=acc_name,
             description=f"Flujo de Caja (Egreso): {record.description}",
             debit=round(record.credit, 2),
             credit=0.0
@@ -186,9 +232,17 @@ def delete_cash_flow_record(record_id: int, db: Session = Depends(get_db)):
     record = db.query(CashFlowRecord).filter(CashFlowRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Registro de flujo de caja no encontrado")
+
+    # Eliminar asientos contables sincronizados en Libro Diario
+    desc_ingreso = f"Flujo de Caja (Ingreso): {record.description}"
+    desc_egreso = f"Flujo de Caja (Egreso): {record.description}"
+    db.query(JournalEntry).filter(
+        (JournalEntry.description == desc_ingreso) | (JournalEntry.description == desc_egreso)
+    ).delete(synchronize_session=False)
+
     db.delete(record)
     db.commit()
-    return {"message": "Registro de flujo de caja eliminado correctamente"}
+    return {"message": "Registro de flujo de caja y sus asientos contables eliminados correctamente"}
 
 
 # --- REPORTES FINANCIEROS (P&L Y BALANCE GENERAL) ---
@@ -610,7 +664,7 @@ def get_monthly_pnl_report(
 
 @router.get("/reports/balance-general")
 def get_balance_general_report(
-    scope: Optional[str] = "excel",
+    scope: Optional[str] = "all",
     db: Session = Depends(get_db)
 ):
     """

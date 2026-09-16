@@ -113,6 +113,80 @@ try:
                 db_init.add(mat)
             db_init.commit()
 
+    # 3. Auto-sincronizar y reclasificar asientos de Flujo de Caja (Equipos a Activos Fijos 152005, Capital a Patrimonio 311505)
+    try:
+        from datetime import datetime
+        from app.models.accounting import CashFlowRecord, JournalEntry
+        from app.api.accounting import map_cashflow_to_puc
+
+        cash_records = db_init.query(CashFlowRecord).all()
+        for cf in cash_records:
+            is_income = (cf.income or 0) > 0
+            amount = cf.income if is_income else cf.credit
+            if not amount or amount <= 0:
+                continue
+
+            target_puc, target_name = map_cashflow_to_puc(cf.category, cf.description, is_income)
+
+            search_prefix = f"Flujo de Caja ({'Ingreso' if is_income else 'Egreso'}): {cf.description}"
+            matching_entries = db_init.query(JournalEntry).filter(JournalEntry.description == search_prefix).all()
+
+            if matching_entries:
+                for e in matching_entries:
+                    if is_income:
+                        if e.credit > 0 and e.puc_code != target_puc:
+                            e.puc_code = target_puc
+                            e.account_name = target_name
+                    else:
+                        if e.debit > 0 and e.puc_code != target_puc:
+                            e.puc_code = target_puc
+                            e.account_name = target_name
+            else:
+                last_je = db_init.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
+                next_num = (last_je.entry_number if last_je else 0) + 1
+                entry_dt = cf.record_date or datetime.utcnow()
+                if is_income:
+                    db_init.add(JournalEntry(
+                        entry_number=next_num,
+                        entry_date=entry_dt,
+                        puc_code="110505",
+                        account_name="Caja General",
+                        description=search_prefix,
+                        debit=round(amount, 2),
+                        credit=0.0
+                    ))
+                    db_init.add(JournalEntry(
+                        entry_number=next_num,
+                        entry_date=entry_dt,
+                        puc_code=target_puc,
+                        account_name=target_name,
+                        description=search_prefix,
+                        debit=0.0,
+                        credit=round(amount, 2)
+                    ))
+                else:
+                    db_init.add(JournalEntry(
+                        entry_number=next_num,
+                        entry_date=entry_dt,
+                        puc_code=target_puc,
+                        account_name=target_name,
+                        description=search_prefix,
+                        debit=round(amount, 2),
+                        credit=0.0
+                    ))
+                    db_init.add(JournalEntry(
+                        entry_number=next_num,
+                        entry_date=entry_dt,
+                        puc_code="110505",
+                        account_name="Caja General",
+                        description=search_prefix,
+                        debit=0.0,
+                        credit=round(amount, 2)
+                    ))
+        db_init.commit()
+    except Exception as e:
+        db_init.rollback()
+
     db_init.close()
 except Exception as e:
     pass

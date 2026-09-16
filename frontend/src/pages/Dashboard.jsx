@@ -48,7 +48,7 @@ export default function Dashboard({ setActiveTab }) {
   const [balanceGeneral, setBalanceGeneral] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [balanceTab, setBalanceTab] = useState('statement'); // 'statement' | 'ratios' | 'breakdown'
-  const [balanceScope, setBalanceScope] = useState('excel'); // 'excel' | 'all'
+  const [balanceScope, setBalanceScope] = useState('all'); // 'all' | 'excel'
   const [balanceSearch, setBalanceSearch] = useState('');
 
   // Estado para el Flujo de Efectivo Mensual (Hoja Flujo_de_Caja)

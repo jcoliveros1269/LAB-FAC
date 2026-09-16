@@ -1376,10 +1376,11 @@ export default function Accounting() {
                   className="w-full bg-[#101010] border border-[#2A2A2A] rounded-sm p-2 text-[#EAEAEA] focus:outline-none focus:border-slate-500"
                 >
                   <option value="Ventas Directas">Ventas Directas (3D)</option>
+                  <option value="Equipos y Maquinaria">Equipos y Maquinaria (Activos Fijos - Impresoras)</option>
+                  <option value="Capital inicial">Capital inicial / Aportes de Socios (Patrimonio)</option>
+                  <option value="Insumos y Materiales">Insumos y Filamentos (Inventario)</option>
                   <option value="Servicios Públicos">Servicios Públicos (Energía / Luz)</option>
-                  <option value="Insumos y Materiales">Insumos y Filamentos</option>
                   <option value="Mano de Obra">Mano de Obra / Salarios</option>
-                  <option value="Equipos y Maquinaria">Equipos y Mantenimiento</option>
                   <option value="Aportes e Inversión">Aportes e Inversión</option>
                   <option value="Otros Gastos">Otros Gastos / General</option>
                 </select>
