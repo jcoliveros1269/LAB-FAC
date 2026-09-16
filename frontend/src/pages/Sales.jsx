@@ -175,6 +175,68 @@ export default function Sales() {
     return mat ? mat.cost_per_g : 65.0;
   };
 
+  // Buscar automáticamente la mejor bobina disponible según tipo y color
+  const findBestSpool = (type, color) => {
+    const c = (color || '').trim().toLowerCase();
+    const t = (type || '').trim().toLowerCase();
+    if (!c) return null;
+
+    // 1. Coincidencia exacta de tipo + color con stock > 0
+    let best = materials.find(m => 
+      (m.material_type || '').trim().toLowerCase() === t &&
+      (m.color || '').trim().toLowerCase() === c &&
+      (m.current_stock_g || 0) > 0
+    );
+    if (best) return best;
+
+    // 2. Coincidencia de color con stock > 0
+    best = materials.find(m => 
+      (m.color || '').trim().toLowerCase() === c &&
+      (m.current_stock_g || 0) > 0
+    );
+    if (best) return best;
+
+    // 3. Coincidencia parcial de color con stock > 0
+    best = materials.find(m => 
+      (m.color || '').trim().toLowerCase().includes(c) &&
+      (m.current_stock_g || 0) > 0
+    );
+    if (best) return best;
+
+    // 4. Coincidencia exacta de tipo + color aunque esté en 0g
+    best = materials.find(m => 
+      (m.material_type || '').trim().toLowerCase() === t &&
+      (m.color || '').trim().toLowerCase() === c
+    );
+    if (best) return best;
+
+    // 5. Coincidencia de color cualquiera
+    best = materials.find(m => (m.color || '').trim().toLowerCase() === c);
+    return best || null;
+  };
+
+  // Auto-vincular bobina de inventario al cargar materiales si el usuario ya tenía un color seleccionado
+  useEffect(() => {
+    if (!materials || materials.length === 0) return;
+    setQuoteForm(prev => {
+      let changed = false;
+      const newPlates = (prev.plates || []).map(p => {
+        const newFils = (p.filaments || []).map(f => {
+          if (!f.material_id && f.color && !f.unlinkedByUser) {
+            const best = findBestSpool(f.type, f.color);
+            if (best) {
+              changed = true;
+              return { ...f, material_id: best.id, article_code: best.article_code || '' };
+            }
+          }
+          return f;
+        });
+        return { ...p, filaments: newFils };
+      });
+      return changed ? { ...prev, plates: newPlates } : prev;
+    });
+  }, [materials]);
+
   // Manejo de Placas Dinámicas
   const handleAddPlate = () => {
     setQuoteForm(prev => {
@@ -240,6 +302,7 @@ export default function Sales() {
     const defaultType = 'PLA';
     const colors = getColorsForType(defaultType);
     const defaultColor = colors.length > 0 ? colors[0].color : 'Negro';
+    const bestSpool = findBestSpool(defaultType, defaultColor);
     setQuoteForm(prev => ({
       ...prev,
       plates: (prev.plates || []).map(p => {
@@ -248,7 +311,17 @@ export default function Sales() {
           ...p,
           filaments: [
             ...(p.filaments || []),
-            { id: Date.now() + Math.random(), material_id: '', article_code: '', type: defaultType, color: defaultColor, grams: 0.0, isCustomColor: false }
+            { 
+              id: Date.now() + Math.random(), 
+              material_id: bestSpool ? bestSpool.id : '', 
+              article_code: bestSpool ? (bestSpool.article_code || '') : '', 
+              type: defaultType, 
+              color: defaultColor, 
+              grams: 0.0, 
+              isCustomColor: false,
+              unlinkedByUser: false,
+              showAllSpools: false
+            }
           ]
         };
       })
@@ -284,7 +357,8 @@ export default function Sales() {
             filaments: (p.filaments || []).map(f => f.id === filId ? {
               ...f,
               material_id: '',
-              article_code: ''
+              article_code: '',
+              unlinkedByUser: true
             } : f)
           };
         })
@@ -307,7 +381,8 @@ export default function Sales() {
             article_code: selectedMat.article_code || '',
             type: selectedMat.material_type || f.type,
             color: selectedMat.color || f.color,
-            isCustomColor: false
+            isCustomColor: false,
+            unlinkedByUser: false
           } : f)
         };
       })
@@ -317,6 +392,7 @@ export default function Sales() {
   const handleFilamentTypeChangeInPlate = (plateId, filId, newType) => {
     const colors = getColorsForType(newType);
     const firstColor = colors.length > 0 ? colors[0].color : 'Blanco';
+    const bestSpool = findBestSpool(newType, firstColor);
     setQuoteForm(prev => ({
       ...prev,
       plates: (prev.plates || []).map(p => {
@@ -325,11 +401,13 @@ export default function Sales() {
           ...p,
           filaments: (p.filaments || []).map(f => f.id === filId ? {
             ...f,
-            material_id: '',
-            article_code: '',
+            material_id: bestSpool ? bestSpool.id : '',
+            article_code: bestSpool ? (bestSpool.article_code || '') : '',
             type: newType,
             color: firstColor,
-            isCustomColor: false
+            isCustomColor: false,
+            unlinkedByUser: false,
+            showAllSpools: false
           } : f)
         };
       })
@@ -343,7 +421,23 @@ export default function Sales() {
         if (p.id !== plateId) return p;
         return {
           ...p,
-          filaments: (p.filaments || []).map(f => f.id === filId ? { ...f, [field]: value } : f)
+          filaments: (p.filaments || []).map(f => {
+            if (f.id !== filId) return f;
+            const updated = { ...f, [field]: value };
+            if (field === 'color') {
+              const bestSpool = findBestSpool(updated.type, value);
+              if (bestSpool) {
+                updated.material_id = bestSpool.id;
+                updated.article_code = bestSpool.article_code || '';
+              } else {
+                updated.material_id = '';
+                updated.article_code = '';
+              }
+              updated.unlinkedByUser = false;
+              updated.showAllSpools = false;
+            }
+            return updated;
+          })
         };
       })
     }));
@@ -1122,6 +1216,38 @@ export default function Sales() {
                           const neededGrams = (parseFloat(fil.grams) || 0) * (parseInt(plate.quantity, 10) || 1);
                           const availStock = selectedMat ? (selectedMat.current_stock_g || 0) : null;
 
+                          // Filtrar bobinas que coincidan con el color seleccionado
+                          const targetColor = (fil.color || '').trim().toLowerCase();
+                          const targetType = (fil.type || '').trim().toLowerCase();
+
+                          const matchingColorSpools = materials.filter(m => {
+                            if (!targetColor) return true;
+                            const mc = (m.color || '').trim().toLowerCase();
+                            return mc === targetColor || mc.includes(targetColor) || targetColor.includes(mc);
+                          });
+
+                          const sortedColorSpools = [...matchingColorSpools].sort((a, b) => {
+                            const aTypeMatch = (a.material_type || '').trim().toLowerCase() === targetType ? 1 : 0;
+                            const bTypeMatch = (b.material_type || '').trim().toLowerCase() === targetType ? 1 : 0;
+                            const aStock = (a.current_stock_g || 0);
+                            const bStock = (b.current_stock_g || 0);
+                            const aHasStock = aStock > 0 ? 1 : 0;
+                            const bHasStock = bStock > 0 ? 1 : 0;
+
+                            if (aTypeMatch !== bTypeMatch) return bTypeMatch - aTypeMatch;
+                            if (aHasStock !== bHasStock) return bHasStock - aHasStock;
+                            return bStock - aStock;
+                          });
+
+                          // Bobinas a mostrar: solo las del color seleccionado por defecto
+                          const displaySpools = fil.showAllSpools
+                            ? materials
+                            : (sortedColorSpools.length > 0
+                                ? (selectedMat && !sortedColorSpools.some(m => String(m.id) === String(selectedMat.id))
+                                    ? [selectedMat, ...sortedColorSpools]
+                                    : sortedColorSpools)
+                                : materials);
+
                           return (
                             <div key={fil.id || filIdx} className="p-2.5 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2 relative">
                               <div className="flex items-center justify-between">
@@ -1170,26 +1296,53 @@ export default function Sales() {
                                 <div className="flex items-center justify-between mb-1">
                                   <label className="text-[9px] text-[#A0A0A0] flex items-center gap-1 font-medium">
                                     <Package className="w-3 h-3 text-blue-400" />
-                                    Bobina de Inventario (según orden y disponibilidad)
+                                    <span>Bobina de Inventario</span>
+                                    {fil.color && !fil.showAllSpools && sortedColorSpools.length > 0 && (
+                                      <span className="text-[8px] px-1.5 py-0.2 rounded bg-cyan-950/60 border border-cyan-800/60 text-cyan-300 font-mono">
+                                        Color: {fil.color} ({sortedColorSpools.length})
+                                      </span>
+                                    )}
                                   </label>
-                                  {fil.material_id && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSelectMaterialSpoolInPlate(plate.id, fil.id, '')}
-                                      className="text-[8px] text-slate-400 hover:text-rose-400 underline"
-                                      title="Desvincular bobina y usar selección manual"
-                                    >
-                                      Desvincular
-                                    </button>
-                                  )}
+                                  <div className="flex items-center gap-2">
+                                    {materials.length > sortedColorSpools.length && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleFilamentChangeInPlate(plate.id, fil.id, 'showAllSpools', !fil.showAllSpools)}
+                                        className="text-[8px] text-slate-400 hover:text-cyan-300 underline"
+                                        title="Alternar entre ver solo este color o todas las bobinas"
+                                      >
+                                        {fil.showAllSpools ? `Filtrar por ${fil.color}` : `Ver todas (${materials.length})`}
+                                      </button>
+                                    )}
+                                    {fil.material_id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMaterialSpoolInPlate(plate.id, fil.id, '')}
+                                        className="text-[8px] text-slate-400 hover:text-rose-400 underline"
+                                        title="Desvincular bobina y usar selección manual"
+                                      >
+                                        Desvincular
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <select
                                   value={fil.material_id || ''}
-                                  onChange={(e) => handleSelectMaterialSpoolInPlate(plate.id, fil.id, e.target.value)}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__ALL__') {
+                                      handleFilamentChangeInPlate(plate.id, fil.id, 'showAllSpools', true);
+                                    } else {
+                                      handleSelectMaterialSpoolInPlate(plate.id, fil.id, e.target.value);
+                                    }
+                                  }}
                                   className="w-full bg-[#151515] border border-[#303030] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-blue-500 text-[11px] font-mono"
                                 >
-                                  <option value="">-- Seleccionar de inventario (o configurar manual abajo) --</option>
-                                  {materials.map((m) => {
+                                  <option value="">
+                                    {fil.color && sortedColorSpools.length > 0 && !fil.showAllSpools
+                                      ? `-- Bobinas disponibles para ${fil.color} (${sortedColorSpools.length}) --`
+                                      : '-- Seleccionar de inventario (o configurar manual abajo) --'}
+                                  </option>
+                                  {displaySpools.map((m) => {
                                     const stock = m.current_stock_g || 0;
                                     const code = m.article_code ? `[${m.article_code}] ` : '';
                                     const stockStatus = stock > 0 ? `${stock}g disp.` : 'AGOTADO (0g)';
@@ -1199,6 +1352,11 @@ export default function Sales() {
                                       </option>
                                     );
                                   })}
+                                  {!fil.showAllSpools && materials.length > sortedColorSpools.length && (
+                                    <option value="__ALL__">
+                                      -- Ver todas las demás bobinas del inventario ({materials.length}) --
+                                    </option>
+                                  )}
                                 </select>
                               </div>
 
