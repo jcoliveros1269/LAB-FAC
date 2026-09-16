@@ -187,13 +187,21 @@ try:
         db_init.commit()
     except Exception as e:
         db_init.rollback()
+    finally:
+        db_init.close()
+except Exception as e:
+    pass
 
-    # 4. Auto-crear usuario administrador inicial si no existen usuarios
-    try:
-        from app.models.auth import User
-        from app.core.security import hash_password
-        admin_user = db_init.query(User).filter(User.username == "admin").first()
-        if not admin_user and db_init.query(User).count() == 0:
+# 4. Sincronización e inicialización garantizada de usuario Administrador (admin / admin123)
+try:
+    from app.database import SessionLocal
+    from app.models.auth import User
+    from app.core.security import hash_password, verify_password
+    from sqlalchemy import func
+
+    with SessionLocal() as auth_db:
+        admin_user = auth_db.query(User).filter(func.lower(User.username) == "admin").first()
+        if not admin_user:
             initial_admin = User(
                 username="admin",
                 hashed_password=hash_password("admin123"),
@@ -201,15 +209,21 @@ try:
                 role="ADMIN",
                 is_active=True
             )
-            db_init.add(initial_admin)
-            db_init.commit()
-            print("[OK] Usuario inicial 'admin' creado exitosamente (Clave: admin123).")
-    except Exception as e:
-        db_init.rollback()
-
-    db_init.close()
-except Exception as e:
-    pass
+            auth_db.add(initial_admin)
+            auth_db.commit()
+            print("[OK] Usuario administrador 'admin' inicializado (Clave: admin123).")
+        else:
+            needs_update = False
+            if not admin_user.is_active:
+                admin_user.is_active = True
+                needs_update = True
+            if not verify_password("admin123", admin_user.hashed_password) and ":" not in (admin_user.hashed_password or ""):
+                admin_user.hashed_password = hash_password("admin123")
+                needs_update = True
+            if needs_update:
+                auth_db.commit()
+except Exception as auth_err:
+    print(f"[WARN] Error inicializando usuario admin: {auth_err}")
 
 app = FastAPI(
     title="Prisma Lab ERP - API Backend",

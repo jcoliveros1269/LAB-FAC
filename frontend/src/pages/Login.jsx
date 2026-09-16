@@ -27,7 +27,12 @@ export default function Login() {
       toast.success(`¡Bienvenido de nuevo, ${user.full_name || user.username}!`);
     } catch (err) {
       console.error('Error en inicio de sesión:', err);
-      const detail = err.response?.data?.detail || 'Usuario o contraseña incorrectos';
+      let detail = 'Usuario o contraseña incorrectos';
+      if (!err.response) {
+        detail = 'No se pudo conectar con el servidor Backend (puerto 8000). Por favor inicia los servicios con la opción [1] en el Panel de Control.';
+      } else if (err.response?.data?.detail) {
+        detail = err.response.data.detail;
+      }
       setErrorMsg(detail);
       toast.error(detail);
     } finally {
