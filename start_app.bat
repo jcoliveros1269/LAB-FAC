@@ -176,7 +176,7 @@ if not exist "%VENV_UVICORN%" (
 ) else (
     "%VENV_PYTHON%" -c "import jwt" >nul 2>&1
     if !errorlevel! neq 0 (
-        echo       [*] Actualizando librerias de seguridad (pyjwt)...
+        echo       [*] Actualizando librerias de seguridad pyjwt...
         "%VENV_DIR%\Scripts\pip" install -r "%ROOT_DIR%backend\requirements.txt" --quiet
     )
     echo       [OK] Entorno virtual de Python listo y verificado.
