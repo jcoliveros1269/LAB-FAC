@@ -19,6 +19,70 @@ def get_next_entry_number(db: Session) -> int:
     last_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
     return (last_entry.entry_number if last_entry else 0) + 1
 
+def parse_entry_datetime(val) -> datetime:
+    """
+    Parsea de forma robusta cualquier formato de fecha proveniente del frontend o usuario:
+    - YYYY-MM-DD
+    - DD/MM/YYYY o DD-MM-YYYY
+    - DD/MM o DD-MM (asumiendo año actual)
+    - ISO con hora (YYYY-MM-DDTHH:MM:SS)
+    - Objetos datetime
+    Retorna un objeto datetime naive a mediodía (12:00:00) para evitar desfases de zona horaria UTC-5.
+    """
+    if not val:
+        return datetime.utcnow()
+    if isinstance(val, datetime):
+        return val.replace(tzinfo=None)
+    
+    val_str = str(val).strip()
+    if not val_str:
+        return datetime.utcnow()
+
+    # Si viene con T o espacio de hora, separar la parte de fecha
+    date_part = val_str.split("T")[0].split(" ")[0].strip()
+    
+    # 1. Probar YYYY-MM-DD
+    try:
+        parts = date_part.split("-")
+        if len(parts) == 3 and len(parts[0]) == 4:
+            return datetime(int(parts[0]), int(parts[1]), int(parts[2]), 12, 0, 0)
+    except Exception:
+        pass
+        
+    # 2. Probar DD/MM/YYYY o DD-MM-YYYY o DD/MM
+    for sep in ("/", "-"):
+        if sep in date_part:
+            parts = date_part.split(sep)
+            if len(parts) == 3:
+                # DD/MM/YYYY
+                try:
+                    y = int(parts[2])
+                    m = int(parts[1])
+                    d = int(parts[0])
+                    if y < 100: y += 2000
+                    return datetime(y, m, d, 12, 0, 0)
+                except Exception:
+                    pass
+            elif len(parts) == 2:
+                # DD/MM (ej. 27/04) -> tomar año actual
+                try:
+                    d = int(parts[0])
+                    m = int(parts[1])
+                    y = datetime.utcnow().year
+                    return datetime(y, m, d, 12, 0, 0)
+                except Exception:
+                    pass
+                    
+    # 3. Fallback a fromisoformat
+    try:
+        clean_iso = val_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_iso)
+        return dt.replace(tzinfo=None)
+    except Exception:
+        pass
+
+    return datetime.utcnow()
+
 # --- INSUMOS / MATERIALES (FILAMENTOS) ---
 
 @router.get("/materials", response_model=List[RawMaterialResponse])
@@ -46,17 +110,19 @@ def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_d
     if mat_dict.get("current_stock_g") == 0.0 and (mat_dict.get("initial_stock_g", 0.0) > 0.0) and (mat_dict.get("outgoing_stock_g", 0.0) == 0.0):
         mat_dict["current_stock_g"] = mat_dict["initial_stock_g"]
     
-    # Manejar fecha personalizada de ingreso o compra
-    custom_date = mat_dict.get("created_at") or datetime.utcnow()
+    # Manejar fecha personalizada de ingreso o compra (robusto ante cualquier formato)
+    raw_custom_date = mat_dict.get("entry_date") or mat_dict.get("created_at")
+    custom_date = parse_entry_datetime(raw_custom_date)
     mat_dict["created_at"] = custom_date
     mat_dict["updated_at"] = custom_date
+    mat_dict.pop("entry_date", None)
         
     db_material = RawMaterial(**mat_dict)
     db.add(db_material)
     db.commit()
     db.refresh(db_material)
 
-    # Registro de Asiento Contable Automático (Partida Doble) con fecha personalizada
+    # Registro de Asiento Contable Automático (Partida Doble) con fecha personalizada exacta
     total_value = (db_material.initial_stock_g or 0.0) * (db_material.cost_per_g or 0.0)
     if total_value > 0:
         entry_num = get_next_entry_number(db)
@@ -91,6 +157,25 @@ def update_raw_material(material_id: int, material_update: RawMaterialUpdate, db
         raise HTTPException(status_code=404, detail="Material no encontrado")
     
     update_data = material_update.model_dump(exclude_unset=True)
+    
+    # Manejar actualización de fecha y sincronización con contabilidad
+    if "created_at" in update_data or "entry_date" in update_data:
+        raw_val = update_data.pop("entry_date", None) or update_data.get("created_at")
+        if raw_val:
+            new_date = parse_entry_datetime(raw_val)
+            db_material.created_at = new_date
+            db_material.updated_at = new_date
+            update_data["created_at"] = new_date
+            
+            # Sincronizar fecha en los asientos contables asociados del Libro Diario
+            mat_desc_query = f"%{db_material.material_type}%{db_material.color}%"
+            related_entries = db.query(JournalEntry).filter(
+                JournalEntry.description.ilike(mat_desc_query),
+                JournalEntry.puc_code.in_(["140505", "110505"])
+            ).all()
+            for rentry in related_entries:
+                rentry.entry_date = new_date
+    
     for key, value in update_data.items():
         setattr(db_material, key, value)
     
@@ -175,7 +260,8 @@ def get_additional_supplies(
 
 @router.post("/additional-supplies", response_model=AdditionalSupplyResponse)
 def create_additional_supply(supply: AdditionalSupplyCreate, db: Session = Depends(get_db)):
-    custom_date = supply.created_at or datetime.utcnow()
+    raw_date = supply.entry_date or supply.created_at
+    custom_date = parse_entry_datetime(raw_date)
     db_supply = AdditionalSupply(
         name=supply.name.strip(),
         item_type=supply.item_type.upper(),
@@ -197,6 +283,14 @@ def update_additional_supply(supply_id: int, supply_update: AdditionalSupplyUpda
         raise HTTPException(status_code=404, detail="Insumo adicional no encontrado")
     
     update_data = supply_update.model_dump(exclude_unset=True)
+    if "created_at" in update_data or "entry_date" in update_data:
+        raw_date = update_data.pop("entry_date", None) or update_data.get("created_at")
+        if raw_date:
+            new_date = parse_entry_datetime(raw_date)
+            db_supply.created_at = new_date
+            db_supply.updated_at = new_date
+            update_data["created_at"] = new_date
+
     if "name" in update_data and update_data["name"]:
         db_supply.name = update_data["name"].strip()
     if "item_type" in update_data and update_data["item_type"]:

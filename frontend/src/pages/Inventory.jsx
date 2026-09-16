@@ -35,6 +35,18 @@ export default function Inventory() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
+  const normalizeDateInput = (val) => {
+    if (!val) return getTodayYMD();
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m3 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m3) return `${m3[3]}-${m3[2].padStart(2, '0')}-${m3[1].padStart(2, '0')}`;
+    const m2 = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+    if (m2) return `${new Date().getFullYear()}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`;
+    if (s.includes('T')) return s.split('T')[0];
+    return getTodayYMD();
+  };
+
   const DEFAULT_NEW_MATERIAL = {
     article_code: '',
     name: '',
@@ -164,6 +176,7 @@ export default function Inventory() {
     try {
       const stockInit = parseFloat(newMaterial.initial_stock_g) || 1000.0;
       const costG = parseFloat(newMaterial.cost_per_g) || 65.0;
+      const finalDate = normalizeDateInput(newMaterial.entry_date);
 
       const payload = {
         article_code: newMaterial.article_code ? newMaterial.article_code.trim().toUpperCase() : undefined,
@@ -176,7 +189,8 @@ export default function Inventory() {
         cost_per_g: costG,
         min_stock_alert_g: parseFloat(newMaterial.min_stock_alert_g) || 200.0,
         notes: newMaterial.notes || '',
-        created_at: newMaterial.entry_date ? new Date(`${newMaterial.entry_date}T12:00:00Z`).toISOString() : new Date().toISOString()
+        entry_date: finalDate,
+        created_at: `${finalDate}T12:00:00`
       };
 
       await inventoryService.createMaterial(payload);
@@ -195,7 +209,18 @@ export default function Inventory() {
   const handleOpenEditMaterial = (item) => {
     setEditingMaterial(item);
     const itemDate = item.created_at || item.updated_at;
-    const ymd = itemDate ? new Date(itemDate).toISOString().split('T')[0] : getTodayYMD();
+    let ymd = getTodayYMD();
+    if (itemDate) {
+      const str = String(itemDate);
+      if (str.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(str)) {
+        ymd = str.substring(0, 10);
+      } else {
+        const d = new Date(itemDate);
+        if (!isNaN(d.getTime())) {
+          ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+      }
+    }
     setEditMaterialData({
       article_code: item.article_code || '',
       name: item.name,
@@ -219,6 +244,7 @@ export default function Inventory() {
       const stockInit = parseFloat(editMaterialData.initial_stock_g) || 0;
       const outgoing = parseFloat(editMaterialData.outgoing_stock_g) || 0;
       const current = stockInit - outgoing;
+      const finalDate = normalizeDateInput(editMaterialData.entry_date);
 
       await inventoryService.updateMaterial(editingMaterial.id, {
         article_code: editMaterialData.article_code ? editMaterialData.article_code.trim().toUpperCase() : undefined,
@@ -231,7 +257,8 @@ export default function Inventory() {
         cost_per_g: parseFloat(editMaterialData.cost_per_g) || 65.0,
         min_stock_alert_g: parseFloat(editMaterialData.min_stock_alert_g) || 200.0,
         notes: editMaterialData.notes || '',
-        created_at: editMaterialData.entry_date ? new Date(`${editMaterialData.entry_date}T12:00:00Z`).toISOString() : undefined
+        entry_date: finalDate,
+        created_at: `${finalDate}T12:00:00`
       });
       toast.success(`Insumo '${editMaterialData.name}' actualizado`);
       setEditingMaterial(null);
@@ -279,13 +306,15 @@ export default function Inventory() {
   const handleCreateSupply = async (e) => {
     e.preventDefault();
     try {
+      const finalDate = normalizeDateInput(newSupply.entry_date);
       const payload = {
         name: newSupply.name.trim(),
         item_type: newSupply.item_type,
         unit_cost_cop: parseFloat(newSupply.unit_cost_cop) || 0,
         stock_units: parseFloat(newSupply.stock_units) || 0,
         notes: newSupply.notes || '',
-        created_at: newSupply.entry_date ? new Date(`${newSupply.entry_date}T12:00:00Z`).toISOString() : new Date().toISOString()
+        entry_date: finalDate,
+        created_at: `${finalDate}T12:00:00`
       };
       await inventoryService.createAdditionalSupply(payload);
       toast.success(`Insumo '${newSupply.name}' registrado exitosamente`);
@@ -302,11 +331,25 @@ export default function Inventory() {
 
   const handleOpenEditSupply = (supply) => {
     setEditingSupply(supply);
+    const itemDate = supply.created_at || supply.updated_at;
+    let ymd = getTodayYMD();
+    if (itemDate) {
+      const str = String(itemDate);
+      if (str.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(str)) {
+        ymd = str.substring(0, 10);
+      } else {
+        const d = new Date(itemDate);
+        if (!isNaN(d.getTime())) {
+          ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+      }
+    }
     setEditSupplyData({
       name: supply.name,
       item_type: supply.item_type,
       unit_cost_cop: supply.unit_cost_cop,
       stock_units: supply.stock_units,
+      entry_date: ymd,
       notes: supply.notes || ''
     });
   };
@@ -314,12 +357,15 @@ export default function Inventory() {
   const handleSaveEditSupply = async (e) => {
     e.preventDefault();
     try {
+      const finalDate = normalizeDateInput(editSupplyData.entry_date);
       const payload = {
         name: editSupplyData.name.trim(),
         item_type: editSupplyData.item_type,
         unit_cost_cop: parseFloat(editSupplyData.unit_cost_cop) || 0,
         stock_units: parseFloat(editSupplyData.stock_units) || 0,
-        notes: editSupplyData.notes || ''
+        notes: editSupplyData.notes || '',
+        entry_date: finalDate,
+        created_at: `${finalDate}T12:00:00`
       };
       await inventoryService.updateAdditionalSupply(editingSupply.id, payload);
       toast.success(`Insumo '${editSupplyData.name}' actualizado`);
@@ -1211,10 +1257,19 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Fecha de Ingreso / Compra</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0] flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Fecha de Ingreso</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNewMaterial({ ...newMaterial, entry_date: getTodayYMD() })}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-mono"
+                  >
+                    Hoy
+                  </button>
+                </div>
                 <input
                   type="date"
                   required
@@ -1223,6 +1278,10 @@ export default function Inventory() {
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
                   title="Selecciona la fecha exacta si el insumo fue adquirido en días anteriores"
                 />
+                <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
+                  <span>Asignada:</span>
+                  <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newMaterial.entry_date))}</span>
+                </div>
               </div>
             </div>
 
@@ -1386,16 +1445,29 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Fecha de Ingreso</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0] flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Fecha de Ingreso</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditMaterialData({ ...editMaterialData, entry_date: getTodayYMD() })}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-mono"
+                  >
+                    Hoy
+                  </button>
+                </div>
                 <input
                   type="date"
                   value={editMaterialData.entry_date || ''}
                   onChange={(e) => setEditMaterialData({ ...editMaterialData, entry_date: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
                 />
+                <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
+                  <span>Asignada:</span>
+                  <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(editMaterialData.entry_date))}</span>
+                </div>
               </div>
             </div>
 
@@ -1539,10 +1611,19 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-[#A0A0A0] mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Fecha Ingreso</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0] flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Fecha Ingreso</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNewSupply({ ...newSupply, entry_date: getTodayYMD() })}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-mono"
+                  >
+                    Hoy
+                  </button>
+                </div>
                 <input
                   type="date"
                   required
@@ -1550,6 +1631,10 @@ export default function Inventory() {
                   onChange={(e) => setNewSupply({ ...newSupply, entry_date: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500 cursor-pointer"
                 />
+                <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
+                  <span>Asignada:</span>
+                  <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newSupply.entry_date))}</span>
+                </div>
               </div>
             </div>
 
@@ -1609,7 +1694,7 @@ export default function Inventory() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1">Tipo de Insumo</label>
                 <select
@@ -1646,6 +1731,32 @@ export default function Inventory() {
                   onChange={(e) => setEditSupplyData({ ...editSupplyData, stock_units: e.target.value })}
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono focus:border-slate-500"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0] flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Fecha Ingreso</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditSupplyData({ ...editSupplyData, entry_date: getTodayYMD() })}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-mono"
+                  >
+                    Hoy
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  value={editSupplyData.entry_date || ''}
+                  onChange={(e) => setEditSupplyData({ ...editSupplyData, entry_date: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500 cursor-pointer"
+                />
+                <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
+                  <span>Asignada:</span>
+                  <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(editSupplyData.entry_date))}</span>
+                </div>
               </div>
             </div>
 
