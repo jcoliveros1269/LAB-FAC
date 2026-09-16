@@ -7,6 +7,7 @@ class RawMaterial(Base):
     __tablename__ = "raw_materials"
 
     id = Column(Integer, primary_key=True, index=True)
+    article_code = Column(String, index=True, nullable=True) # ej: PGAM01-01, PGBL00-01
     name = Column(String, index=True, nullable=False) # ej: PETG Arrow Yellow 1kg
     color = Column(String, nullable=False) # ej: Amarillo
     material_type = Column(String, index=True, nullable=False) # ej: PETG, PLA, TPU

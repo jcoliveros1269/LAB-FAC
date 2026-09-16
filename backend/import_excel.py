@@ -109,7 +109,41 @@ def run_import():
 
         # 3. IMPORTAR INVENTARIO DE MATERIALES (FILAMENTOS)
         print("[+] Importando Inventario de Materiales / Filamentos...")
-        if "Inventario_Materiales" in wb.sheetnames:
+        if "Inventario_Materiales_(2)" in wb.sheetnames:
+            sheet = wb["Inventario_Materiales_(2)"]
+            for r in range(7, sheet.max_row + 1):
+                code = clean_val(sheet.cell(row=r, column=1).value)
+                name = clean_val(sheet.cell(row=r, column=2).value)
+                if name:
+                    color = clean_val(sheet.cell(row=r, column=3).value, "Estándar")
+                    mtype = clean_val(sheet.cell(row=r, column=4).value, "PLA")
+                    prov = clean_val(sheet.cell(row=r, column=5).value)
+                    stock_init = clean_float(sheet.cell(row=r, column=7).value, 1000.0)
+                    outgoing = clean_float(sheet.cell(row=r, column=8).value, 0.0)
+                    stock_act = sheet.cell(row=r, column=9).value
+                    current_stock = clean_float(stock_act, stock_init - outgoing)
+                    cost_g = clean_float(sheet.cell(row=r, column=10).value)
+                    if cost_g == 0:
+                        cost_tot = clean_float(sheet.cell(row=r, column=6).value)
+                        cost_g = cost_tot / 1000.0 if cost_tot > 0 else 65.0
+                    notes = clean_val(sheet.cell(row=r, column=14).value, "")
+                    if prov:
+                        notes = f"Proveedor: {prov}. {notes}".strip()
+
+                    mat = RawMaterial(
+                        article_code=code,
+                        name=name,
+                        color=color.capitalize() if color else "Estándar",
+                        material_type=mtype.upper() if mtype else "PLA",
+                        initial_stock_g=stock_init,
+                        outgoing_stock_g=outgoing,
+                        current_stock_g=current_stock,
+                        cost_per_g=cost_g,
+                        notes=notes,
+                        min_stock_alert_g=200.0
+                    )
+                    db.add(mat)
+        elif "Inventario_Materiales" in wb.sheetnames:
             sheet = wb["Inventario_Materiales"]
             for r in range(2, sheet.max_row + 1):
                 name = clean_val(sheet.cell(row=r, column=1).value)

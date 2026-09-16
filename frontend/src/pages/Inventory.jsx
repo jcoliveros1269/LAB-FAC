@@ -3,6 +3,7 @@ import { Package, Search, Plus, RefreshCw, Layers, X, DollarSign, TrendingDown, 
 import { toast } from 'sonner';
 import { inventoryService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
+import { predictArticleCode } from '../utils/articleCodes';
 
 export default function Inventory() {
   const [activeSubtab, setActiveSubtab] = useState(() => {
@@ -35,6 +36,7 @@ export default function Inventory() {
   };
 
   const DEFAULT_NEW_MATERIAL = {
+    article_code: '',
     name: '',
     color: 'Blanco',
     material_type: 'PETG',
@@ -164,6 +166,7 @@ export default function Inventory() {
       const costG = parseFloat(newMaterial.cost_per_g) || 65.0;
 
       const payload = {
+        article_code: newMaterial.article_code ? newMaterial.article_code.trim().toUpperCase() : undefined,
         name: newMaterial.name.trim(),
         color: newMaterial.color.trim(),
         material_type: newMaterial.material_type.trim(),
@@ -194,6 +197,7 @@ export default function Inventory() {
     const itemDate = item.created_at || item.updated_at;
     const ymd = itemDate ? new Date(itemDate).toISOString().split('T')[0] : getTodayYMD();
     setEditMaterialData({
+      article_code: item.article_code || '',
       name: item.name,
       color: item.color,
       material_type: item.material_type,
@@ -217,6 +221,7 @@ export default function Inventory() {
       const current = stockInit - outgoing;
 
       await inventoryService.updateMaterial(editingMaterial.id, {
+        article_code: editMaterialData.article_code ? editMaterialData.article_code.trim().toUpperCase() : undefined,
         name: editMaterialData.name.trim(),
         color: editMaterialData.color.trim(),
         material_type: editMaterialData.material_type.trim(),
@@ -377,6 +382,7 @@ export default function Inventory() {
     const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
       !q ||
+      (m.article_code && m.article_code.toLowerCase().includes(q)) ||
       m.name.toLowerCase().includes(q) ||
       m.color.toLowerCase().includes(q) ||
       m.material_type.toLowerCase().includes(q) ||
@@ -816,6 +822,7 @@ export default function Inventory() {
             <table className="w-full text-left text-[11px] border-collapse">
               <thead>
                 <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
+                  <th className="py-2 px-2 font-semibold">N.° de Artículo</th>
                   <th className="py-2 px-2 font-semibold">Material / Ref</th>
                   <th className="py-2 px-1.5 font-semibold">Fecha</th>
                   <th className="py-2 px-1.5 font-semibold">Tipo</th>
@@ -842,6 +849,9 @@ export default function Inventory() {
 
                   return (
                     <tr key={item.id} className="hover:bg-[#222222] transition-colors">
+                      <td className="py-2 px-2 font-mono font-bold text-emerald-400 whitespace-nowrap text-[11px]">
+                        {item.article_code || '-'}
+                      </td>
                       <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">{item.name}</td>
                       <td className="py-2 px-1.5 text-[#A0A0A0] font-mono text-[10px] whitespace-nowrap">
                         {formatDate(item.created_at || item.updated_at)}
@@ -1134,16 +1144,42 @@ export default function Inventory() {
               </button>
             </div>
 
-            <div>
-              <label className="block text-[#A0A0A0] mb-1">Nombre Insumo / Referencia</label>
-              <input
-                type="text"
-                required
-                placeholder="ej. PETG Blanco Bambu Lab 1kg"
-                value={newMaterial.name}
-                onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
-                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Nombre Insumo / Referencia</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ej. PETG Blanco Bambu Lab 1kg"
+                  value={newMaterial.name}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0]">N.° de Artículo (Código)</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewMaterial(prev => ({
+                      ...prev,
+                      article_code: predictArticleCode(prev.material_type, prev.color, materials)
+                    }))}
+                    className="text-[10px] text-emerald-400 hover:underline"
+                    title="Calcular según tipo y color"
+                  >
+                    Auto ({predictArticleCode(newMaterial.material_type, newMaterial.color, materials)})
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder={predictArticleCode(newMaterial.material_type, newMaterial.color, materials)}
+                  value={newMaterial.article_code}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, article_code: e.target.value.toUpperCase() })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-emerald-400 font-mono font-bold px-3 py-1.5 rounded-sm focus:border-slate-500 uppercase"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1285,15 +1321,41 @@ export default function Inventory() {
               </button>
             </div>
 
-            <div>
-              <label className="block text-[#A0A0A0] mb-1">Nombre Insumo</label>
-              <input
-                type="text"
-                required
-                value={editMaterialData.name}
-                onChange={(e) => setEditMaterialData({ ...editMaterialData, name: e.target.value })}
-                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Nombre Insumo</label>
+                <input
+                  type="text"
+                  required
+                  value={editMaterialData.name}
+                  onChange={(e) => setEditMaterialData({ ...editMaterialData, name: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[#A0A0A0]">N.° de Artículo (Código)</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditMaterialData(prev => ({
+                      ...prev,
+                      article_code: predictArticleCode(prev.material_type, prev.color, materials)
+                    }))}
+                    className="text-[10px] text-emerald-400 hover:underline"
+                    title="Calcular según tipo y color"
+                  >
+                    Auto ({predictArticleCode(editMaterialData.material_type, editMaterialData.color, materials)})
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="ej. PGBL00-01"
+                  value={editMaterialData.article_code || ''}
+                  onChange={(e) => setEditMaterialData({ ...editMaterialData, article_code: e.target.value.toUpperCase() })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-emerald-400 font-mono font-bold px-3 py-1.5 rounded-sm focus:border-slate-500 uppercase"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class RawMaterialBase(BaseModel):
+    article_code: Optional[str] = None
     name: str
     color: str
     material_type: str
@@ -18,6 +19,7 @@ class RawMaterialCreate(RawMaterialBase):
     pass
 
 class RawMaterialUpdate(BaseModel):
+    article_code: Optional[str] = None
     name: Optional[str] = None
     color: Optional[str] = None
     material_type: Optional[str] = None

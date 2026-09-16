@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw } from 'lucide-react';
+import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { productionService, inventoryService, salesService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
@@ -58,7 +58,7 @@ export default function Production({ setActiveTab }) {
     quantity: 1,
     print_hours: 1.0,
     filaments: [
-      { id: 1, type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
+      { id: 1, material_id: '', article_code: '', type: 'PETG', color: 'Blanco', grams: 50.0, isCustomColor: false }
     ],
     discount_percentage: 0.0,
     discount_amount: 0.0,
@@ -110,8 +110,14 @@ export default function Production({ setActiveTab }) {
     return Array.from(map.values());
   };
 
-  // Obtener costo por gramo de un filamento específico
-  const getFilamentCost = (type, color) => {
+  // Obtener costo por gramo de un filamento específico (o por bobina seleccionada en inventario)
+  const getFilamentCost = (type, color, materialId = null) => {
+    if (materialId) {
+      const mat = materials.find(m => m.id === materialId || String(m.id) === String(materialId));
+      if (mat && typeof mat.cost_per_g === 'number' && mat.cost_per_g > 0) {
+        return mat.cost_per_g;
+      }
+    }
     if (!type) return 65.0;
     const mat = materials.find(m => 
       m.material_type && m.material_type.toUpperCase() === type.toUpperCase() &&
@@ -128,7 +134,7 @@ export default function Production({ setActiveTab }) {
       ...prev,
       filaments: [
         ...prev.filaments,
-        { id: Date.now(), type: defaultType, color: defaultColor, grams: 0.0, isCustomColor: false }
+        { id: Date.now(), material_id: '', article_code: '', type: defaultType, color: defaultColor, grams: 0.0, isCustomColor: false }
       ]
     }));
   };
@@ -144,6 +150,36 @@ export default function Production({ setActiveTab }) {
     }));
   };
 
+  // Asignar bobina específica de inventario en calculadora de producción
+  const handleSelectMaterialSpool = (filId, matId) => {
+    if (!matId) {
+      setFormData(prev => ({
+        ...prev,
+        filaments: prev.filaments.map(f => f.id === filId ? {
+          ...f,
+          material_id: '',
+          article_code: ''
+        } : f)
+      }));
+      return;
+    }
+
+    const selectedMat = materials.find(m => String(m.id) === String(matId));
+    if (!selectedMat) return;
+
+    setFormData(prev => ({
+      ...prev,
+      filaments: prev.filaments.map(f => f.id === filId ? {
+        ...f,
+        material_id: selectedMat.id,
+        article_code: selectedMat.article_code || '',
+        type: selectedMat.material_type || f.type,
+        color: selectedMat.color || f.color,
+        isCustomColor: false
+      } : f)
+    }));
+  };
+
   const handleFilamentTypeChange = (id, newType) => {
     const colors = getColorsForType(newType);
     const firstColor = colors.length > 0 ? colors[0].color : 'Blanco';
@@ -151,6 +187,8 @@ export default function Production({ setActiveTab }) {
       ...prev,
       filaments: prev.filaments.map(f => f.id === id ? { 
         ...f, 
+        material_id: '',
+        article_code: '',
         type: newType, 
         color: firstColor,
         isCustomColor: false
@@ -491,20 +529,43 @@ export default function Production({ setActiveTab }) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {(formData.filaments || []).map((fil, idx) => {
+                  const selectedMat = fil.material_id ? materials.find(m => String(m.id) === String(fil.material_id)) : null;
                   const colorsForType = getColorsForType(fil.type);
-                  const unitCost = getFilamentCost(fil.type, fil.color);
+                  const unitCost = getFilamentCost(fil.type, fil.color, fil.material_id);
                   const subtotalCost = unitCost * (parseFloat(fil.grams) || 0);
+                  const neededGrams = (parseFloat(fil.grams) || 0) * (parseInt(formData.quantity, 10) || 1);
+                  const availStock = selectedMat ? (selectedMat.current_stock_g || 0) : null;
 
                   return (
                     <div key={fil.id || idx} className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2 relative">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[11px] font-semibold text-slate-300">
                             Filamento {idx + 1}
                           </span>
+                          {fil.article_code && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/60 border border-blue-700/60 text-blue-300 font-mono font-semibold" title="Código de Artículo">
+                              {fil.article_code}
+                            </span>
+                          )}
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#1A1A1A] border border-[#2A2A2A] text-emerald-400 font-mono font-medium">
                             ${unitCost.toFixed(2)}/g
                           </span>
+                          {selectedMat && (
+                            availStock >= neededGrams && availStock > 0 ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-700/60 text-emerald-400 font-mono font-medium" title={`Stock disponible: ${availStock.toLocaleString()}g (Requerido: ${neededGrams.toFixed(1)}g)`}>
+                                ✓ {availStock.toLocaleString()}g disp.
+                              </span>
+                            ) : availStock > 0 ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/60 text-amber-300 font-mono font-medium" title={`Stock insuficiente: disponible ${availStock.toLocaleString()}g, faltan ${(neededGrams - availStock).toFixed(1)}g`}>
+                                ⚠ {availStock.toLocaleString()}g disp.
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-950/60 border border-rose-700/60 text-rose-400 font-mono font-medium" title="Bobina agotada (0g)">
+                                ✗ Agotado (0g)
+                              </span>
+                            )
+                          )}
                         </div>
                         {formData.filaments.length > 1 && (
                           <button
@@ -516,6 +577,43 @@ export default function Production({ setActiveTab }) {
                             <X className="w-3.5 h-3.5" />
                           </button>
                         )}
+                      </div>
+
+                      {/* Selector de Bobina de Inventario por Disponibilidad */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-[#A0A0A0] flex items-center gap-1 font-medium">
+                            <Package className="w-3 h-3 text-blue-400" />
+                            Bobina de Inventario (según orden y disponibilidad)
+                          </label>
+                          {fil.material_id && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectMaterialSpool(fil.id, '')}
+                              className="text-[9px] text-slate-400 hover:text-rose-400 underline"
+                              title="Desvincular bobina y usar selección manual"
+                            >
+                              Desvincular
+                            </button>
+                          )}
+                        </div>
+                        <select
+                          value={fil.material_id || ''}
+                          onChange={(e) => handleSelectMaterialSpool(fil.id, e.target.value)}
+                          className="w-full bg-[#151515] border border-[#303030] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-blue-500 text-[11px] font-mono"
+                        >
+                          <option value="">-- Seleccionar de inventario (o configurar manual abajo) --</option>
+                          {materials.map((m) => {
+                            const stock = m.current_stock_g || 0;
+                            const code = m.article_code ? `[${m.article_code}] ` : '';
+                            const stockStatus = stock > 0 ? `${stock}g disp.` : 'AGOTADO (0g)';
+                            return (
+                              <option key={m.id} value={m.id}>
+                                {code}{m.name} ({m.material_type} {m.color}) — {stockStatus} (${m.cost_per_g?.toFixed(2)}/g)
+                              </option>
+                            );
+                          })}
+                        </select>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2">
@@ -534,7 +632,7 @@ export default function Production({ setActiveTab }) {
                         <div>
                           <div className="flex items-center justify-between">
                             <label className="block text-[10px] text-[#666666]">Color</label>
-                            {colorsForType.length > 0 && (
+                            {colorsForType.length > 0 && !fil.material_id && (
                               <button
                                 type="button"
                                 onClick={() => handleFilamentChange(fil.id, 'isCustomColor', !fil.isCustomColor)}
@@ -545,7 +643,7 @@ export default function Production({ setActiveTab }) {
                             )}
                           </div>
 
-                          {fil.isCustomColor || colorsForType.length === 0 ? (
+                          {fil.isCustomColor || (colorsForType.length === 0 && !fil.material_id) ? (
                             <input
                               type="text"
                               placeholder="Color..."
@@ -559,6 +657,9 @@ export default function Production({ setActiveTab }) {
                               onChange={(e) => handleFilamentChange(fil.id, 'color', e.target.value)}
                               className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1 rounded-sm focus:border-slate-500"
                             >
+                              {fil.material_id && !colorsForType.some(c => c.color === fil.color) && (
+                                <option value={fil.color}>{fil.color}</option>
+                              )}
                               {colorsForType.map((c, i) => (
                                 <option key={i} value={c.color}>
                                   {c.color} (${c.cost_per_g.toFixed(2)}/g)
@@ -588,6 +689,11 @@ export default function Production({ setActiveTab }) {
                         <span>Costo estimado material:</span>
                         <span className="font-mono font-medium text-[#EAEAEA]">
                           ${subtotalCost.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
+                          {parseInt(formData.quantity, 10) > 1 && (
+                            <span className="text-[9px] text-slate-400 ml-1">
+                              ({fil.grams}g × {formData.quantity} unds)
+                            </span>
+                          )}
                         </span>
                       </div>
                     </div>

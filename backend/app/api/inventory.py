@@ -6,6 +6,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.inventory import RawMaterial, FinishedProduct, AdditionalSupply
 from app.models.accounting import JournalEntry
+from app.utils import generate_article_code
 from app.schemas.inventory import (
     RawMaterialResponse, RawMaterialCreate, RawMaterialUpdate,
     FinishedProductResponse, FinishedProductCreate,
@@ -31,11 +32,17 @@ def get_raw_materials(
         query = query.filter(RawMaterial.material_type.ilike(f"%{material_type}%"))
     if color:
         query = query.filter(RawMaterial.color.ilike(f"%{color}%"))
-    return query.all()
+    return query.order_by(RawMaterial.id.asc()).all()
 
 @router.post("/materials", response_model=RawMaterialResponse)
 def create_raw_material(material: RawMaterialCreate, db: Session = Depends(get_db)):
     mat_dict = material.model_dump()
+    if not mat_dict.get("article_code"):
+        mat_dict["article_code"] = generate_article_code(
+            mat_dict.get("material_type", "PETG"),
+            mat_dict.get("color", "Blanco"),
+            db=db
+        )
     if mat_dict.get("current_stock_g") == 0.0 and (mat_dict.get("initial_stock_g", 0.0) > 0.0) and (mat_dict.get("outgoing_stock_g", 0.0) == 0.0):
         mat_dict["current_stock_g"] = mat_dict["initial_stock_g"]
     
