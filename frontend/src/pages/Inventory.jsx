@@ -1270,14 +1270,31 @@ export default function Inventory() {
                     Hoy
                   </button>
                 </div>
-                <input
-                  type="date"
-                  required
-                  value={newMaterial.entry_date || getTodayYMD()}
-                  onChange={(e) => setNewMaterial({ ...newMaterial, entry_date: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
-                  title="Selecciona la fecha exacta si el insumo fue adquirido en días anteriores"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    required
+                    placeholder="DD/MM/AAAA o DD/MM (ej. 27/04)"
+                    value={newMaterial.entry_date || ''}
+                    onChange={(e) => setNewMaterial({ ...newMaterial, entry_date: e.target.value })}
+                    className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] pl-2.5 pr-8 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs"
+                    title="Escribe la fecha (ej. 27/04 o 27/04/2026) o selecciona del calendario"
+                  />
+                  <input
+                    type="date"
+                    tabIndex={-1}
+                    value={normalizeDateInput(newMaterial.entry_date)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-');
+                        setNewMaterial({ ...newMaterial, entry_date: `${d}/${m}/${y}` });
+                      }
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 w-6 h-6 cursor-pointer z-10"
+                    title="Abrir calendario"
+                  />
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
                 <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
                   <span>Asignada:</span>
                   <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newMaterial.entry_date))}</span>
@@ -1458,12 +1475,30 @@ export default function Inventory() {
                     Hoy
                   </button>
                 </div>
-                <input
-                  type="date"
-                  value={editMaterialData.entry_date || ''}
-                  onChange={(e) => setEditMaterialData({ ...editMaterialData, entry_date: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs cursor-pointer"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="DD/MM/AAAA o DD/MM (ej. 27/04)"
+                    value={editMaterialData.entry_date || ''}
+                    onChange={(e) => setEditMaterialData({ ...editMaterialData, entry_date: e.target.value })}
+                    className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] pl-2.5 pr-8 py-1.5 rounded-sm focus:border-slate-500 font-mono text-xs"
+                    title="Escribe la fecha (ej. 27/04 o 27/04/2026) o selecciona del calendario"
+                  />
+                  <input
+                    type="date"
+                    tabIndex={-1}
+                    value={normalizeDateInput(editMaterialData.entry_date)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-');
+                        setEditMaterialData({ ...editMaterialData, entry_date: `${d}/${m}/${y}` });
+                      }
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 w-6 h-6 cursor-pointer z-10"
+                    title="Abrir calendario"
+                  />
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
                 <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
                   <span>Asignada:</span>
                   <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(editMaterialData.entry_date))}</span>
@@ -1624,13 +1659,31 @@ export default function Inventory() {
                     Hoy
                   </button>
                 </div>
-                <input
-                  type="date"
-                  required
-                  value={newSupply.entry_date || getTodayYMD()}
-                  onChange={(e) => setNewSupply({ ...newSupply, entry_date: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500 cursor-pointer"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    required
+                    placeholder="DD/MM/AAAA o DD/MM (ej. 27/04)"
+                    value={newSupply.entry_date || ''}
+                    onChange={(e) => setNewSupply({ ...newSupply, entry_date: e.target.value })}
+                    className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] pl-2.5 pr-8 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500"
+                    title="Escribe la fecha o selecciona del calendario"
+                  />
+                  <input
+                    type="date"
+                    tabIndex={-1}
+                    value={normalizeDateInput(newSupply.entry_date)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-');
+                        setNewSupply({ ...newSupply, entry_date: `${d}/${m}/${y}` });
+                      }
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 w-6 h-6 cursor-pointer z-10"
+                    title="Abrir calendario"
+                  />
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
                 <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
                   <span>Asignada:</span>
                   <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newSupply.entry_date))}</span>
@@ -1747,12 +1800,30 @@ export default function Inventory() {
                     Hoy
                   </button>
                 </div>
-                <input
-                  type="date"
-                  value={editSupplyData.entry_date || ''}
-                  onChange={(e) => setEditSupplyData({ ...editSupplyData, entry_date: e.target.value })}
-                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500 cursor-pointer"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="DD/MM/AAAA o DD/MM (ej. 27/04)"
+                    value={editSupplyData.entry_date || ''}
+                    onChange={(e) => setEditSupplyData({ ...editSupplyData, entry_date: e.target.value })}
+                    className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] pl-2.5 pr-8 py-1.5 rounded-sm font-mono text-xs focus:border-slate-500"
+                    title="Escribe la fecha o selecciona del calendario"
+                  />
+                  <input
+                    type="date"
+                    tabIndex={-1}
+                    value={normalizeDateInput(editSupplyData.entry_date)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-');
+                        setEditSupplyData({ ...editSupplyData, entry_date: `${d}/${m}/${y}` });
+                      }
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 w-6 h-6 cursor-pointer z-10"
+                    title="Abrir calendario"
+                  />
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
                 <div className="mt-1 text-[10px] text-[#888888] flex items-center justify-between font-mono">
                   <span>Asignada:</span>
                   <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(editSupplyData.entry_date))}</span>

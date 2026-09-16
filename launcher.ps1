@@ -172,14 +172,14 @@ function Stop-Services {
         try { Stop-Process -Id $script:frontendProc.Id -Force -ErrorAction SilentlyContinue } catch {}
     }
 
-    # Limpiar puertos 8000 y 3000 por seguridad
+    # Limpiar puertos 8000 y 3000 con taskkill para matar todo el arbol de procesos
     try {
         $netstat = netstat -ano | Select-String ":8000\s|:3000\s"
         foreach ($line in $netstat) {
             $parts = ($line -split '\s+') | Where-Object { $_ -ne "" }
             $pidToKill = $parts[-1]
             if ($pidToKill -and $pidToKill -ne "0" -and $pidToKill -ne [System.Diagnostics.Process]::GetCurrentProcess().Id) {
-                Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
+                cmd /c "taskkill /F /PID $pidToKill /T" 2>&1 | Out-Null
             }
         }
     } catch {}
@@ -340,6 +340,61 @@ function Update-System {
     Read-Host | Out-Null
 }
 
+function Test-SystemDiagnostics {
+    Clear-Host
+    Write-Host ""
+    Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
+    Write-Host "   DIAGNOSTICO DEL SISTEMA Y PRUEBA EN VIVO" -ForegroundColor Cyan
+    Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
+    Write-Host ""
+    
+    # 1. Comprobar Backend
+    Write-Host "   [1/3] Verificando Servidor Backend (FastAPI)..." -ForegroundColor Yellow
+    try {
+        $res = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 3 -ErrorAction Stop
+        Write-Host "         [OK] Backend en linea. Version instalada: $($res.backend_version)" -ForegroundColor Green
+        Write-Host "         [OK] Base de datos: $($res.database_file)" -ForegroundColor Gray
+        Write-Host "         [OK] Total Materiales registrados: $($res.materials_count)" -ForegroundColor Cyan
+        if ($res.last_material) {
+            Write-Host "         [i] Ultimo Material: [$($res.last_material.code)] $($res.last_material.name)" -ForegroundColor Gray
+            Write-Host "             Fecha registrada: $($res.last_material.created_at)" -ForegroundColor White
+        }
+        if ($res.last_journal_entry) {
+            Write-Host "         [i] Ultimo Asiento Contable: #$($res.last_journal_entry.entry_number) (PUC $($res.last_journal_entry.puc))" -ForegroundColor Gray
+            Write-Host "             Fecha contable: $($res.last_journal_entry.date)" -ForegroundColor White
+        }
+    } catch {
+        Write-Host "         [ERROR] No se pudo conectar con el Backend en http://127.0.0.1:8000: $_" -ForegroundColor Red
+    }
+    Write-Host ""
+
+    # 2. Comprobar Frontend
+    Write-Host "   [2/3] Verificando Servidor Frontend (React Vite)..." -ForegroundColor Yellow
+    try {
+        $frontCheck = Invoke-WebRequest -Uri "http://localhost:3000" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+        if ($frontCheck.StatusCode -eq 200) {
+            Write-Host "         [OK] Frontend en linea en http://localhost:3000" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "         [ADVERTENCIA] Frontend no responde en puerto 3000: $_" -ForegroundColor DarkYellow
+    }
+    Write-Host ""
+
+    # 3. Comprobar Git
+    Write-Host "   [3/3] Verificando version de Git..." -ForegroundColor Yellow
+    Push-Location $script:rootDir
+    try {
+        $gitLog = & git log -1 --oneline 2>&1
+        Write-Host "         [OK] Ultimo commit instalado: $gitLog" -ForegroundColor Green
+    } catch {}
+    Pop-Location
+
+    Write-Host ""
+    Write-Host "  ==============================================================================" -ForegroundColor DarkCyan
+    Write-Host "   Presiona [Enter] para volver al Panel de Control..." -ForegroundColor Yellow
+    Read-Host | Out-Null
+}
+
 function Show-Dashboard {
     Clear-Host
     Write-Host ""
@@ -403,8 +458,10 @@ function Show-Dashboard {
     Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
     Write-Host "Abrir Carpeta del Proyecto y Copias de Seguridad" -ForegroundColor White
     Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
-    Write-Host "Actualizar Sistema desde Git (Git Pull - Descargar Ultima Version)" -ForegroundColor Cyan
+    Write-Host "Diagnostico del Sistema (Prueba en Vivo de Fechas y Backend)" -ForegroundColor Yellow
     Write-Host "   [6] " -NoNewline -ForegroundColor Cyan
+    Write-Host "Actualizar Sistema desde Git (Git Pull - Descargar Ultima Version)" -ForegroundColor Cyan
+    Write-Host "   [7] " -NoNewline -ForegroundColor Cyan
     Write-Host "Detener Todo y Salir" -ForegroundColor Red
     Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
@@ -511,9 +568,12 @@ try {
                 } catch {}
             }
             "5" {
+                Test-SystemDiagnostics
+            }
+            "6" {
                 Update-System
             }
-            { $_ -in @("6", "exit", "salir", "q", "x", "0") } {
+            { $_ -in @("7", "exit", "salir", "q", "x", "0") } {
                 Write-Host ""
                 Write-Host " [!] Deteniendo servidores de Prisma Lab..." -ForegroundColor Yellow
                 Stop-Services
@@ -528,7 +588,7 @@ try {
                 [System.Environment]::Exit(0)
             }
             default {
-                Write-Host "   [!] Opcion no valida. Por favor ingresa un numero del 1 al 6." -ForegroundColor Red
+                Write-Host "   [!] Opcion no valida. Por favor ingresa un numero del 1 al 7." -ForegroundColor Red
                 Start-Sleep -Milliseconds 800
             }
         }

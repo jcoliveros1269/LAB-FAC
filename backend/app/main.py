@@ -150,4 +150,33 @@ def read_root():
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "database": "connected (SQLite local)"}
+    from app.database import SessionLocal, DEFAULT_DB_PATH
+    from app.models.inventory import RawMaterial
+    from app.models.accounting import JournalEntry
+    db = SessionLocal()
+    try:
+        mat_count = db.query(RawMaterial).count()
+        last_mat = db.query(RawMaterial).order_by(RawMaterial.id.desc()).first()
+        entry_count = db.query(JournalEntry).count()
+        last_entry = db.query(JournalEntry).order_by(JournalEntry.id.desc()).first()
+        return {
+            "status": "healthy",
+            "backend_version": "v1.4",
+            "database_file": DEFAULT_DB_PATH,
+            "materials_count": mat_count,
+            "last_material": {
+                "id": last_mat.id,
+                "code": last_mat.article_code,
+                "name": last_mat.name,
+                "created_at": str(last_mat.created_at)
+            } if last_mat else None,
+            "journal_entries_count": entry_count,
+            "last_journal_entry": {
+                "entry_number": last_entry.entry_number,
+                "puc": last_entry.puc_code,
+                "date": str(last_entry.entry_date),
+                "description": last_entry.description
+            } if last_entry else None
+        }
+    finally:
+        db.close()
