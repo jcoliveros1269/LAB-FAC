@@ -165,24 +165,56 @@ $script:frontendProc = $null
 
 function Stop-Services {
     Write-Host " [*] Deteniendo servidores anteriores si existen..." -ForegroundColor Yellow
+
     if ($script:backendProc -and (-not $script:backendProc.HasExited)) {
-        try { Stop-Process -Id $script:backendProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+        try { 
+            cmd /c "taskkill /F /PID $($script:backendProc.Id) /T" 2>&1 | Out-Null
+            Stop-Process -Id $script:backendProc.Id -Force -ErrorAction SilentlyContinue 
+        } catch {}
     }
     if ($script:frontendProc -and (-not $script:frontendProc.HasExited)) {
-        try { Stop-Process -Id $script:frontendProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+        try { 
+            cmd /c "taskkill /F /PID $($script:frontendProc.Id) /T" 2>&1 | Out-Null
+            Stop-Process -Id $script:frontendProc.Id -Force -ErrorAction SilentlyContinue 
+        } catch {}
     }
 
-    # Limpiar puertos 8000 y 3000 con taskkill para matar todo el arbol de procesos
+    # 1. Matar procesos de Python huérfanos (incluyendo multiprocessing.spawn y scripts de backend)
     try {
-        $netstat = netstat -ano | Select-String ":8000\s|:3000\s"
-        foreach ($line in $netstat) {
-            $parts = ($line -split '\s+') | Where-Object { $_ -ne "" }
-            $pidToKill = $parts[-1]
-            if ($pidToKill -and $pidToKill -ne "0" -and $pidToKill -ne [System.Diagnostics.Process]::GetCurrentProcess().Id) {
-                cmd /c "taskkill /F /PID $pidToKill /T" 2>&1 | Out-Null
+        $pyProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            ($_.CommandLine -like "*app.main:app*" -or 
+             ($_.CommandLine -like "*multiprocessing.spawn*" -and $_.CommandLine -like "*python*") -or
+             $_.CommandLine -like "*backend\venv*" -or
+             $_.CommandLine -like "*vite*" -or
+             $_.CommandLine -like "*npm run dev*") -and
+            $_.ProcessId -ne [System.Diagnostics.Process]::GetCurrentProcess().Id
+        }
+        foreach ($proc in $pyProcs) {
+            cmd /c "taskkill /F /PID $($proc.ProcessId) /T" 2>&1 | Out-Null
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
+    # 2. Liberar puertos 8000 y 3000 de forma directa
+    try {
+        $listeners = Get-NetTCPConnection -LocalPort 8000, 3000 -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique
+        foreach ($p in $listeners) {
+            if ($p -and $p -ne 0 -and $p -ne [System.Diagnostics.Process]::GetCurrentProcess().Id) {
+                cmd /c "taskkill /F /PID $p /T" 2>&1 | Out-Null
+                Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
             }
         }
     } catch {}
+
+    # Esperar liberación completa de puertos (máx 3 segundos)
+    $wait = 0
+    while ($wait -lt 6) {
+        $activePorts = Get-NetTCPConnection -LocalPort 8000, 3000 -State Listen -ErrorAction SilentlyContinue
+        if (-not $activePorts) { break }
+        Start-Sleep -Milliseconds 500
+        $wait++
+    }
 }
 
 function Start-Services {
@@ -190,8 +222,9 @@ function Start-Services {
 
     Write-Host " [*] Iniciando servidor Backend (FastAPI)..." -ForegroundColor Cyan
     $pythonExe = Join-Path $script:rootDir "backend\venv\Scripts\python.exe"
+    # Sin --reload para evitar workers huérfanos multiprocessing.spawn en Windows
     $script:backendProc = Start-Process -FilePath $pythonExe `
-        -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload" `
+        -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" `
         -WorkingDirectory (Join-Path $script:rootDir "backend") `
         -WindowStyle Hidden `
         -PassThru
@@ -206,12 +239,15 @@ function Start-Services {
     # Esperar conexión con el backend
     Write-Host " [*] Verificando conexion con el backend..." -ForegroundColor Cyan
     $attempts = 0
-    while ($attempts -lt 8) {
+    while ($attempts -lt 10) {
         Start-Sleep -Seconds 1
         $attempts++
         try {
             $req = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue
-            if ($req.StatusCode -eq 200) { break }
+            if ($req.StatusCode -eq 200) { 
+                Write-Host "       [OK] Backend conectado y respondiendo." -ForegroundColor Green
+                break 
+            }
         } catch {}
     }
 }

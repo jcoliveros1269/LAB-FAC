@@ -24,6 +24,9 @@ echo           Verificando Componentes y Preparando el Sistema...
 echo ===============================================================================
 echo.
 
+:: Limpiar procesos zombies previos para garantizar que tome el codigo nuevo sin reiniciar la PC
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { ($_.CommandLine -like '*app.main:app*' -or ($_.CommandLine -like '*multiprocessing.spawn*' -and $_.CommandLine -like '*python*') -or $_.CommandLine -like '*backend\venv*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+
 :: ============================================================================
 :: 1. VALIDACION Y AUTO-INSTALACION DE PYTHON
 :: ============================================================================
@@ -276,6 +279,8 @@ exit /b %PS_EXIT_CODE%
 :: ============================================================================
 :DO_GIT_UPDATE
 echo.
+echo [*] Deteniendo servidores anteriores de Prisma Lab...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { ($_.CommandLine -like '*app.main:app*' -or ($_.CommandLine -like '*multiprocessing.spawn*' -and $_.CommandLine -like '*python*') -or $_.CommandLine -like '*backend\venv*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 echo [*] Iniciando actualizacion de Prisma Lab desde Git...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%launcher.ps1" -Update
 set "PS_EXIT_CODE=%errorlevel%"

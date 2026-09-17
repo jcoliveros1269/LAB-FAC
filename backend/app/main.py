@@ -313,7 +313,7 @@ def health_check():
         last_entry = db.query(JournalEntry).order_by(JournalEntry.id.desc()).first()
         return {
             "status": "healthy",
-            "backend_version": "v1.4",
+            "backend_version": "v2.1.1",
             "database_file": DEFAULT_DB_PATH,
             "materials_count": mat_count,
             "last_material": {
