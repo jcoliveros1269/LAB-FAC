@@ -50,8 +50,13 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Databases (evitar conflictos de base de datos local en clientes)
+# Databases (evitar conflictos y sobreescritura de base de datos local en clientes)
 *.db
+*.sqlite
 *.sqlite3
 *.db-journal
 *.db.bak
+*.client_bak
+prisma_lab.db
+backend/prisma_lab.db
+backups/

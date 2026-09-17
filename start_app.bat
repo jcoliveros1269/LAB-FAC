@@ -213,10 +213,30 @@ echo [6/6] Verificando base de datos del sistema...
 
 set "DB_FILE=%ROOT_DIR%prisma_lab.db"
 set "BACKEND_DB=%ROOT_DIR%backend\prisma_lab.db"
+set "BACKUP_DIR=%ROOT_DIR%backups"
 set "EXCEL_FILE=%ROOT_DIR%Sistema_Integral_Produccion_ prisma lab(Recuperado automáticamente).xlsm"
 
-if exist "%DB_FILE%" goto :DB_EXISTS
-if exist "%BACKEND_DB%" goto :DB_EXISTS
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+
+:: Si la base esta en backend pero no en raiz, preservarla en raiz
+if not exist "%DB_FILE%" (
+    if exist "%BACKEND_DB%" (
+        copy /Y "%BACKEND_DB%" "%DB_FILE%" >nul 2>&1
+    ) else if exist "%BACKUP_DIR%\auto_backup_prisma_lab.db" (
+        copy /Y "%BACKUP_DIR%\auto_backup_prisma_lab.db" "%DB_FILE%" >nul 2>&1
+    )
+)
+
+:: Crear respaldo de seguridad automatico local cada vez que inicia
+if exist "%DB_FILE%" (
+    copy /Y "%DB_FILE%" "%BACKUP_DIR%\auto_backup_prisma_lab.db" >nul 2>&1
+    goto :DB_EXISTS
+)
+if exist "%BACKEND_DB%" (
+    copy /Y "%BACKEND_DB%" "%DB_FILE%" >nul 2>&1
+    copy /Y "%BACKEND_DB%" "%BACKUP_DIR%\auto_backup_prisma_lab.db" >nul 2>&1
+    goto :DB_EXISTS
+)
 
 if exist "%EXCEL_FILE%" (
     echo       [*] No se encontro base de datos previa pero se detecto archivo Excel.
@@ -230,7 +250,7 @@ echo       [!] No se encontro base de datos previa. Se creara una nueva al inici
 goto :DB_DONE
 
 :DB_EXISTS
-echo       [OK] Base de datos local SQLite verificada.
+echo       [OK] Base de datos local SQLite verificada y respaldada en backups\.
 
 :DB_DONE
 

@@ -257,34 +257,53 @@ function Update-System {
         if (-not $branch -or $branch -like "*fatal*") { $branch = "main" }
         Write-Host "         Rama activa: $branch" -ForegroundColor DarkGray
 
-        # Proteger base de datos local SQLite antes de sincronizar
-        $dbPath = Join-Path $script:rootDir "prisma_lab.db"
-        $dbBackupPath = Join-Path $script:rootDir "prisma_lab.db.client_bak"
-        if (Test-Path $dbPath) {
-            Copy-Item $dbPath $dbBackupPath -Force
+        # 1. Proteger y respaldar las bases de datos locales antes de cualquier accion de Git
+        $backupDir = Join-Path $script:rootDir "backups"
+        if (-not (Test-Path $backupDir)) {
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        }
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+
+        $rootDb = Join-Path $script:rootDir "prisma_lab.db"
+        $backendDb = Join-Path $script:rootDir "backend\prisma_lab.db"
+        $rootBak = Join-Path $script:rootDir "prisma_lab.db.client_bak"
+        $backendBak = Join-Path $script:rootDir "backend\prisma_lab.db.client_bak"
+
+        if (Test-Path $rootDb) {
+            Copy-Item $rootDb (Join-Path $backupDir "prisma_lab_${timestamp}.db") -Force
+            Copy-Item $rootDb $rootBak -Force
+            Write-Host "         [OK] Copia de seguridad guardada en backups\prisma_lab_${timestamp}.db" -ForegroundColor Green
+        }
+        if (Test-Path $backendDb) {
+            Copy-Item $backendDb (Join-Path $backupDir "backend_prisma_lab_${timestamp}.db") -Force
+            Copy-Item $backendDb $backendBak -Force
         }
 
-        # Descartar cambios locales en archivos de codigo/binarios que puedan bloquear git pull
+        # 2. Descartar cambios en archivos de codigo rastreados (NUNCA borrar bases de datos locales)
         & git restore --staged . 2>&1 | Out-Null
-        & git restore prisma_lab.db 2>&1 | Out-Null
-        & git stash --include-untracked 2>&1 | Out-Null
+        & git checkout -- . 2>&1 | Out-Null
 
         $pullOutput = & git pull origin $branch 2>&1
         foreach ($line in $pullOutput) {
             Write-Host "         $line" -ForegroundColor Gray
         }
 
-        # Si aun asi git pull reporta error, forzar fetch + checkout de la rama
+        # Si aun asi git pull reporta error de merge, hacer fetch y reset suave sin borrar archivos locales
         if ($LASTEXITCODE -ne 0 -or ($pullOutput -like "*error:*") -or ($pullOutput -like "*Aborting*")) {
-            Write-Host "         [*] Resolviendo sincronizacion forzada con origen..." -ForegroundColor DarkYellow
+            Write-Host "         [*] Sincronizando con origen..." -ForegroundColor DarkYellow
             & git fetch origin $branch 2>&1 | Out-Null
-            & git reset --hard "origin/$branch" 2>&1 | Out-Null
+            & git reset --mixed "origin/$branch" 2>&1 | Out-Null
+            & git checkout -- . 2>&1 | Out-Null
         }
 
-        # Restaurar la base de datos local del cliente con su informacion intacta
-        if (Test-Path $dbBackupPath) {
-            Copy-Item $dbBackupPath $dbPath -Force
-            Remove-Item $dbBackupPath -Force -ErrorAction SilentlyContinue
+        # 3. Restaurar inmediatamente la base de datos local con la informacion intacta del cliente
+        if (Test-Path $rootBak) {
+            Copy-Item $rootBak $rootDb -Force
+            Remove-Item $rootBak -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $backendBak) {
+            Copy-Item $backendBak $backendDb -Force
+            Remove-Item $backendBak -Force -ErrorAction SilentlyContinue
         }
     } catch {
         Write-Host "         [ERROR] Fallo al ejecutar git pull: $_" -ForegroundColor Red

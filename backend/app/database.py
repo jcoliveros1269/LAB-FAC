@@ -7,10 +7,18 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__)) # d:\LAB\backend\app
 BACKEND_DIR = os.path.dirname(CURRENT_DIR)               # d:\LAB\backend
 PROJECT_ROOT = os.path.dirname(BACKEND_DIR)              # d:\LAB
 
-DEFAULT_DB_PATH = os.path.join(PROJECT_ROOT, "prisma_lab.db")
-# Fallback si por alguna razón no existe en la raíz
-if not os.path.exists(DEFAULT_DB_PATH) and os.path.exists(os.path.join(BACKEND_DIR, "prisma_lab.db")):
-    DEFAULT_DB_PATH = os.path.join(BACKEND_DIR, "prisma_lab.db")
+ROOT_DB = os.path.join(PROJECT_ROOT, "prisma_lab.db")
+BACKEND_DB = os.path.join(BACKEND_DIR, "prisma_lab.db")
+
+# Garantizar base de datos única y canónica en la raíz del proyecto
+if not os.path.exists(ROOT_DB) and os.path.exists(BACKEND_DB):
+    try:
+        import shutil
+        shutil.copy2(BACKEND_DB, ROOT_DB)
+    except Exception:
+        pass
+
+DEFAULT_DB_PATH = ROOT_DB if os.path.exists(ROOT_DB) else (BACKEND_DB if os.path.exists(BACKEND_DB) else ROOT_DB)
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 
