@@ -123,67 +123,6 @@ try:
     if mats_without_code:
         db_init.commit()
 
-    # Si la base de datos tiene menos de 10 materiales, auto-sincronizar el catálogo oficial de bobinas del Excel
-    if db_init.query(RawMaterial).count() < 10:
-        import openpyxl
-        excel_path = os.path.join(PROJECT_ROOT, "Sistema_Integral_Produccion_ prisma lab(Recuperado automáticamente).xlsm")
-        if os.path.exists(excel_path):
-            wb = openpyxl.load_workbook(excel_path, data_only=True)
-            sheet_name = "Inventario_Materiales_(2)" if "Inventario_Materiales_(2)" in wb.sheetnames else "Inventario_Materiales"
-            sheet = wb[sheet_name]
-            start_row = 7 if sheet_name == "Inventario_Materiales_(2)" else 2
-            for r in range(start_row, sheet.max_row + 1):
-                raw_code = sheet.cell(row=r, column=1).value if sheet_name == "Inventario_Materiales_(2)" else None
-                raw_name = sheet.cell(row=r, column=2 if sheet_name == "Inventario_Materiales_(2)" else 1).value
-                if not raw_name:
-                    continue
-                name_str = str(raw_name).strip()
-                if not name_str:
-                    continue
-                
-                code_str = str(raw_code).strip() if raw_code else None
-                if code_str and db_init.query(RawMaterial).filter(RawMaterial.article_code == code_str).first():
-                    continue
-                if db_init.query(RawMaterial).filter(RawMaterial.name == name_str).first():
-                    continue
-
-                color_val = str(sheet.cell(row=r, column=3 if sheet_name == "Inventario_Materiales_(2)" else 2).value or "Estándar").strip()
-                mtype_val = str(sheet.cell(row=r, column=4 if sheet_name == "Inventario_Materiales_(2)" else 3).value or "PLA").strip()
-                try:
-                    stock_init_val = float(sheet.cell(row=r, column=7 if sheet_name == "Inventario_Materiales_(2)" else 4).value or 1000.0)
-                except Exception:
-                    stock_init_val = 1000.0
-                try:
-                    outgoing_val = float(sheet.cell(row=r, column=8 if sheet_name == "Inventario_Materiales_(2)" else 5).value or 0.0)
-                except Exception:
-                    outgoing_val = 0.0
-                try:
-                    cost_g_val = float(sheet.cell(row=r, column=10 if sheet_name == "Inventario_Materiales_(2)" else 8).value or 65.0)
-                except Exception:
-                    cost_g_val = 65.0
-                if cost_g_val <= 0:
-                    cost_g_val = 65.0
-                
-                notes_val = str(sheet.cell(row=r, column=14 if sheet_name == "Inventario_Materiales_(2)" else 10).value or "").strip()
-                prov_val = str(sheet.cell(row=r, column=5).value or "").strip() if sheet_name == "Inventario_Materiales_(2)" else ""
-                if prov_val:
-                    notes_val = f"Proveedor: {prov_val}. {notes_val}".strip()
-
-                mat = RawMaterial(
-                    article_code=code_str if code_str else generate_article_code(mtype_val, color_val, db=db_init),
-                    name=name_str,
-                    color=color_val.capitalize() if color_val else "Estándar",
-                    material_type=mtype_val.upper() if mtype_val else "PLA",
-                    initial_stock_g=stock_init_val,
-                    outgoing_stock_g=outgoing_val,
-                    current_stock_g=stock_init_val - outgoing_val,
-                    cost_per_g=cost_g_val,
-                    notes=notes_val,
-                    min_stock_alert_g=200.0
-                )
-                db_init.add(mat)
-            db_init.commit()
-
     # 3. Auto-sincronizar y reclasificar asientos de Flujo de Caja (Equipos a Activos Fijos 152005, Capital a Patrimonio 311505)
     try:
         from datetime import datetime
