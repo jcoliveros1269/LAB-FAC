@@ -69,6 +69,11 @@ def delete_puc_account(
 
 @router.get("/journal", response_model=List[JournalEntryResponse])
 def get_journal_entries(entry_number: Optional[int] = None, db: Session = Depends(get_db)):
+    try:
+        from app.api.inventory import sync_supplies_accounting
+        sync_supplies_accounting(db)
+    except Exception:
+        pass
     query = db.query(JournalEntry)
     if entry_number:
         query = query.filter(JournalEntry.entry_number == entry_number)

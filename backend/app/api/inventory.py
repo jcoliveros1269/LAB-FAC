@@ -492,11 +492,70 @@ def delete_finished_product(
 
 # --- MATERIAL ADICIONAL: PAPELERÍA & MANTENIMIENTO ---
 
+def sync_supplies_accounting(db: Session):
+    """
+    Sincroniza y genera automáticamente en el Libro Diario las partidas contables
+    de doble entrada (Debe 140505 - Inventario de Materias Primas / Haber 110505 - Caja General)
+    para todos los insumos de Papelería y Mantenimiento que aún no tengan registro contable.
+    """
+    try:
+        supplies = db.query(AdditionalSupply).all()
+        created_any = False
+        next_num = get_next_entry_number(db)
+        for s in supplies:
+            total_val = (s.stock_units or 0.0) * (s.unit_cost_cop or 0.0)
+            if total_val <= 0:
+                continue
+            sup_tag = f"[SUP-{s.id}]"
+            existing = db.query(JournalEntry).filter(
+                JournalEntry.description.ilike(f"%{sup_tag}%")
+            ).first()
+            if not existing:
+                # Si no tiene tag, verificar si ya existe una partida con el nombre exacto
+                named_existing = db.query(JournalEntry).filter(
+                    JournalEntry.puc_code == "140505",
+                    JournalEntry.description.ilike(f"%{s.name}%")
+                ).first()
+                if named_existing:
+                    continue
+
+                entry_num = next_num
+                next_num += 1
+                tipo_label = "Mantenimiento" if s.item_type == "MANTENIMIENTO" else "Papelería"
+                entry_dt = parse_entry_datetime(s.created_at)
+
+                j_debit = JournalEntry(
+                    entry_number=entry_num,
+                    entry_date=entry_dt,
+                    puc_code="140505",
+                    account_name="Inventario de Materias Primas",
+                    description=f"Compra Insumo {tipo_label}: {s.name} {sup_tag} ({s.stock_units} unds)",
+                    debit=round(total_val, 2),
+                    credit=0.0
+                )
+                j_credit = JournalEntry(
+                    entry_number=entry_num,
+                    entry_date=entry_dt,
+                    puc_code="110505",
+                    account_name="Caja General",
+                    description=f"Pago Compra Insumo {tipo_label}: {s.name} {sup_tag}",
+                    debit=0.0,
+                    credit=round(total_val, 2)
+                )
+                db.add(j_debit)
+                db.add(j_credit)
+                created_any = True
+        if created_any:
+            db.commit()
+    except Exception as ex:
+        db.rollback()
+
 @router.get("/additional-supplies", response_model=List[AdditionalSupplyResponse])
 def get_additional_supplies(
     item_type: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
+    sync_supplies_accounting(db)
     query = db.query(AdditionalSupply)
     if item_type:
         query = query.filter(AdditionalSupply.item_type == item_type.upper())
@@ -518,6 +577,36 @@ def create_additional_supply(supply: AdditionalSupplyCreate, db: Session = Depen
     db.add(db_supply)
     db.commit()
     db.refresh(db_supply)
+
+    # Registro de Asiento Contable Automático (Partida Doble)
+    total_val = (db_supply.stock_units or 0.0) * (db_supply.unit_cost_cop or 0.0)
+    if total_val > 0:
+        entry_num = get_next_entry_number(db)
+        sup_tag = f"[SUP-{db_supply.id}]"
+        tipo_label = "Mantenimiento" if db_supply.item_type == "MANTENIMIENTO" else "Papelería"
+
+        j_debit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=custom_date,
+            puc_code="140505",
+            account_name="Inventario de Materias Primas",
+            description=f"Compra Insumo {tipo_label}: {db_supply.name} {sup_tag} ({db_supply.stock_units} unds)",
+            debit=round(total_val, 2),
+            credit=0.0
+        )
+        j_credit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=custom_date,
+            puc_code="110505",
+            account_name="Caja General",
+            description=f"Pago Compra Insumo {tipo_label}: {db_supply.name} {sup_tag}",
+            debit=0.0,
+            credit=round(total_val, 2)
+        )
+        db.add(j_debit)
+        db.add(j_credit)
+        db.commit()
+
     return db_supply
 
 @router.put("/additional-supplies/{supply_id}", response_model=AdditionalSupplyResponse)
@@ -527,6 +616,8 @@ def update_additional_supply(supply_id: int, supply_update: AdditionalSupplyUpda
         raise HTTPException(status_code=404, detail="Insumo adicional no encontrado")
     
     update_data = supply_update.model_dump(exclude_unset=True)
+    date_changed = False
+    new_date = None
     if "created_at" in update_data or "entry_date" in update_data:
         raw_date = update_data.pop("entry_date", None) or update_data.get("created_at")
         if raw_date:
@@ -534,6 +625,7 @@ def update_additional_supply(supply_id: int, supply_update: AdditionalSupplyUpda
             db_supply.created_at = new_date
             db_supply.updated_at = new_date
             update_data["created_at"] = new_date
+            date_changed = True
 
     if "name" in update_data and update_data["name"]:
         db_supply.name = update_data["name"].strip()
@@ -548,6 +640,57 @@ def update_additional_supply(supply_id: int, supply_update: AdditionalSupplyUpda
 
     db.commit()
     db.refresh(db_supply)
+
+    # Sincronización contable de la partida asociada
+    sup_tag = f"[SUP-{db_supply.id}]"
+    tipo_label = "Mantenimiento" if db_supply.item_type == "MANTENIMIENTO" else "Papelería"
+    total_val = (db_supply.stock_units or 0.0) * (db_supply.unit_cost_cop or 0.0)
+
+    matching_entries = db.query(JournalEntry).filter(
+        JournalEntry.description.ilike(f"%{sup_tag}%")
+    ).all()
+
+    if matching_entries:
+        if total_val > 0:
+            for entry in matching_entries:
+                if date_changed and new_date:
+                    entry.entry_date = new_date
+                if entry.puc_code == "140505" or entry.debit > 0:
+                    entry.debit = round(total_val, 2)
+                    entry.description = f"Compra Insumo {tipo_label}: {db_supply.name} {sup_tag} ({db_supply.stock_units} unds)"
+                elif entry.puc_code == "110505" or entry.credit > 0:
+                    entry.credit = round(total_val, 2)
+                    entry.description = f"Pago Compra Insumo {tipo_label}: {db_supply.name} {sup_tag}"
+            db.commit()
+        else:
+            for entry in matching_entries:
+                db.delete(entry)
+            db.commit()
+    elif total_val > 0:
+        entry_num = get_next_entry_number(db)
+        entry_dt = db_supply.created_at or datetime.utcnow()
+        j_debit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=entry_dt,
+            puc_code="140505",
+            account_name="Inventario de Materias Primas",
+            description=f"Compra Insumo {tipo_label}: {db_supply.name} {sup_tag} ({db_supply.stock_units} unds)",
+            debit=round(total_val, 2),
+            credit=0.0
+        )
+        j_credit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=entry_dt,
+            puc_code="110505",
+            account_name="Caja General",
+            description=f"Pago Compra Insumo {tipo_label}: {db_supply.name} {sup_tag}",
+            debit=0.0,
+            credit=round(total_val, 2)
+        )
+        db.add(j_debit)
+        db.add(j_credit)
+        db.commit()
+
     return db_supply
 
 @router.delete("/additional-supplies/{supply_id}")
@@ -561,16 +704,44 @@ def delete_additional_supply(
         raise HTTPException(status_code=404, detail="Insumo adicional no encontrado")
     
     supply_info = f"{db_supply.name} ({db_supply.item_type})"
+    sup_tag = f"[SUP-{db_supply.id}]"
+
+    # Localizar y anular asientos contables asociados en partida doble
+    entry_nums_to_delete = set()
+    matching_entries = db.query(JournalEntry).filter(
+        JournalEntry.description.ilike(f"%{sup_tag}%")
+    ).all()
+    for me in matching_entries:
+        entry_nums_to_delete.add(me.entry_number)
+
+    if not entry_nums_to_delete and db_supply.name:
+        named_entries = db.query(JournalEntry).filter(
+            JournalEntry.puc_code == "140505",
+            JournalEntry.description.ilike(f"%{db_supply.name}%")
+        ).all()
+        for ne in named_entries:
+            entry_nums_to_delete.add(ne.entry_number)
+
+    deleted_entries_count = 0
+    if entry_nums_to_delete:
+        deleted_entries_count = db.query(JournalEntry).filter(
+            JournalEntry.entry_number.in_(list(entry_nums_to_delete))
+        ).delete(synchronize_session=False)
+
     db.delete(db_supply)
     db.commit()
 
+    audit_note = f" (se anularon {deleted_entries_count} registros contables de Asientos #{', #'.join(map(str, entry_nums_to_delete))})" if entry_nums_to_delete else ""
     log_audit_event(
         db=db,
         username=current_user.username,
         module="inventory",
         action="DELETE_SUPPLY",
-        description=f"Eliminó insumo adicional: {supply_info}",
+        description=f"Eliminó insumo adicional: {supply_info}{audit_note}",
         user_id=current_user.id
     )
 
-    return {"message": "Insumo adicional eliminado correctamente"}
+    return {
+        "message": "Insumo adicional eliminado correctamente",
+        "deleted_journal_entries": deleted_entries_count
+    }

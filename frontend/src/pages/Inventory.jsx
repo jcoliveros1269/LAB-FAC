@@ -499,8 +499,9 @@ export default function Inventory() {
   const handleDeleteSupply = async (id, name) => {
     if (!window.confirm(`¿Estás seguro de eliminar '${name}'?`)) return;
     try {
-      await inventoryService.deleteAdditionalSupply(id);
-      toast.success(`Insumo '${name}' eliminado`);
+      const res = await inventoryService.deleteAdditionalSupply(id);
+      const accMsg = res.data?.deleted_journal_entries ? ` (se anularon ${res.data.deleted_journal_entries} registros contables)` : '';
+      toast.success(`Insumo '${name}' eliminado correctamente${accMsg}`);
       loadInventory();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error eliminando insumo');

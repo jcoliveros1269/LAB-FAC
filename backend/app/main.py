@@ -232,6 +232,15 @@ try:
 except Exception as e:
     pass
 
+# Sincronización contable automática para insumos adicionales (Papelería y Mantenimiento)
+try:
+    from app.database import SessionLocal
+    from app.api.inventory import sync_supplies_accounting
+    with SessionLocal() as db_supp_sync:
+        sync_supplies_accounting(db_supp_sync)
+except Exception:
+    pass
+
 # 4. Sincronización e inicialización garantizada de usuario Administrador (admin / admin123)
 try:
     from app.database import SessionLocal
