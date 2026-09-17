@@ -44,6 +44,7 @@ class SalesDocumentBase(BaseModel):
     tax: float = 0.0
     total: float = 0.0
     status: str = "DRAFT" # DRAFT, QUOTED, INVOICED, PAID, CANCELLED
+    is_internal_use: Optional[bool] = False
 
 class SalesDocumentCreate(SalesDocumentBase):
     items: List[SalesDocumentItemCreate] = []

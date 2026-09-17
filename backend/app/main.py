@@ -62,6 +62,36 @@ try:
             conn.execute(text("ALTER TABLE finished_products ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
             conn.commit()
 
+        res_sd = conn.execute(text("PRAGMA table_info(sales_documents)"))
+        cols_sd = [r[1] for r in res_sd.fetchall()]
+        if cols_sd and "is_internal_use" not in cols_sd:
+            conn.execute(text("ALTER TABLE sales_documents ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
+            conn.commit()
+
+        # Migrar documentos y productos previos asociados a clientes de uso interno
+        try:
+            conn.execute(text("""
+                UPDATE sales_documents 
+                SET is_internal_use = 1 
+                WHERE customer_id IN (
+                    SELECT id FROM customers 
+                    WHERE LOWER(name) LIKE '%uso interno%' 
+                       OR LOWER(name) LIKE '%prisma lab%' 
+                       OR LOWER(email) LIKE '%prismalab%'
+                )
+            """))
+            conn.execute(text("""
+                UPDATE finished_products 
+                SET is_internal_use = 1, sale_price_with_margin = 0 
+                WHERE serial IN (
+                    SELECT 'PROD-' || REPLACE(REPLACE(doc_number, 'FAC-', ''), 'COT-', '') 
+                    FROM sales_documents WHERE is_internal_use = 1
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
         # Auto-corregir escalas de multiplicadores de volumen si tienen valores viejos inflados (ej: 5.0)
         try:
             res_vd = conn.execute(text("SELECT id, suggested_price_multiplier FROM volume_discounts")).fetchall()

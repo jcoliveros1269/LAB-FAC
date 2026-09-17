@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -29,6 +29,7 @@ class DocumentType(Base):
     tax = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
     status = Column(String, default="DRAFT") # DRAFT, QUOTED, INVOICED, PAID, CANCELLED
+    is_internal_use = Column(Boolean, default=False)
 
     items = relationship("SalesDocumentItem", backref="document", cascade="all, delete-orphan", lazy="joined")
 

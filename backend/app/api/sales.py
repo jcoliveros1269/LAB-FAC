@@ -74,6 +74,15 @@ def create_sales_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("sales", "write"))
 ):
+    # Determinar si es para uso interno (por flag explícito o por coincidencia en cliente)
+    is_internal = bool(doc.is_internal_use)
+    if not is_internal and doc.customer_id:
+        cust = db.query(Customer).filter(Customer.id == doc.customer_id).first()
+        if cust:
+            c_text = f"{cust.name} {cust.email or ''}".lower()
+            if any(k in c_text for k in ["uso interno", "interno", "taller", "dotacion", "dotación", "propio", "prisma lab"]):
+                is_internal = True
+
     db_doc = DocumentType(
         doc_number=doc.doc_number,
         doc_type=doc.doc_type.upper(),
@@ -82,7 +91,8 @@ def create_sales_document(
         discount=doc.discount,
         tax=doc.tax,
         total=doc.total,
-        status=doc.status
+        status=doc.status,
+        is_internal_use=is_internal
     )
     db.add(db_doc)
     db.commit()
@@ -100,7 +110,7 @@ def create_sales_document(
         for item in doc.items:
             existing_prod = db.query(FinishedProduct).filter(
                 FinishedProduct.name.ilike(item.product_name.strip()),
-                FinishedProduct.is_internal_use == False
+                FinishedProduct.is_internal_use == is_internal
             ).first()
 
             if existing_prod:
@@ -108,12 +118,17 @@ def create_sales_document(
                 existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
                 if item.unit_cost and item.unit_cost > 0:
                     existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
-                if item.unit_price and item.unit_price > 0:
+                if is_internal:
+                    existing_prod.sale_price_with_margin = 0.0
+                    existing_prod.is_internal_use = True
+                elif item.unit_price and item.unit_price > 0:
                     existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
                 db.add(existing_prod)
             else:
+                serial_prefix = "INT" if is_internal else "PROD"
+                clean_doc_num = db_doc.doc_number.replace('FAC-', '').replace('COT-', '')
                 new_prod = FinishedProduct(
-                    serial=f"PROD-{db_doc.doc_number.replace('FAC-', '').replace('COT-', '')}",
+                    serial=f"{serial_prefix}-{clean_doc_num}",
                     name=item.product_name.strip(),
                     color="Multicolor",
                     material_type="Pieza 3D",
@@ -121,36 +136,64 @@ def create_sales_document(
                     outgoing_units=0,
                     current_stock_units=max(0, item.quantity),
                     unit_cost_cop=max(0.0, item.unit_cost or 0.0),
-                    sale_price_with_margin=max(0.0, item.unit_price or 0.0),
-                    min_stock_alert=5
+                    sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
+                    min_stock_alert=5,
+                    is_internal_use=is_internal
                 )
                 db.add(new_prod)
 
     # Auto-generar asiento contable si nace como FACTURA / PAID
     if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
         next_entry_num = (db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first().entry_number or 0) + 1
-        # Asiento 1: Débito Caja
-        j1 = JournalEntry(
-            entry_number=next_entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="110505",
-            account_name="Caja General",
-            description=f"Venta Factura {db_doc.doc_number}",
-            debit=db_doc.total,
-            credit=0.0
-        )
-        # Asiento 2: Crédito Ingresos Ventas
-        j2 = JournalEntry(
-            entry_number=next_entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="413505",
-            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
-            description=f"Venta Factura {db_doc.doc_number}",
-            debit=0.0,
-            credit=db_doc.total
-        )
-        db.add(j1)
-        db.add(j2)
+        
+        if is_internal:
+            # Factura de Uso Interno: solo a costo de fabricación (152405 Débito / 513505 Crédito)
+            total_mfg_cost = sum((item.unit_cost or 0.0) * (item.quantity or 1) for item in doc.items)
+            if total_mfg_cost <= 0:
+                total_mfg_cost = db_doc.total
+            j1 = JournalEntry(
+                entry_number=next_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="152405",
+                account_name="Herramientas y Accesorios de Taller (Uso Propio)",
+                description=f"Alta Pieza Uso Interno Factura {db_doc.doc_number}",
+                debit=round(total_mfg_cost, 2),
+                credit=0.0
+            )
+            j2 = JournalEntry(
+                entry_number=next_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="513505",
+                account_name="Dotación y Mantenimiento de Taller",
+                description=f"Alta Pieza Uso Interno Factura {db_doc.doc_number}",
+                debit=0.0,
+                credit=round(total_mfg_cost, 2)
+            )
+            db.add(j1)
+            db.add(j2)
+        else:
+            # Asiento 1: Débito Caja
+            j1 = JournalEntry(
+                entry_number=next_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="110505",
+                account_name="Caja General",
+                description=f"Venta Factura {db_doc.doc_number}",
+                debit=db_doc.total,
+                credit=0.0
+            )
+            # Asiento 2: Crédito Ingresos Ventas
+            j2 = JournalEntry(
+                entry_number=next_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="413505",
+                account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+                description=f"Venta Factura {db_doc.doc_number}",
+                debit=0.0,
+                credit=db_doc.total
+            )
+            db.add(j1)
+            db.add(j2)
 
     db.commit()
     db.expire_all()
@@ -161,7 +204,7 @@ def create_sales_document(
         username=current_user.username,
         module="sales",
         action="CREATE_DOCUMENT",
-        description=f"Generó {db_doc.doc_type} #{db_doc.doc_number} (Total: ${db_doc.total:,.2f})",
+        description=f"Generó {db_doc.doc_type} #{db_doc.doc_number} (Total: ${db_doc.total:,.2f}{' [Uso Interno]' if is_internal else ''})",
         user_id=current_user.id
     )
 
@@ -177,12 +220,22 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     doc.doc_number = doc.doc_number.replace("COT-", "FAC-")
     doc.status = "INVOICED"
 
+    # Determinar si es uso interno
+    is_internal = bool(doc.is_internal_use)
+    if not is_internal and doc.customer_id:
+        cust = db.query(Customer).filter(Customer.id == doc.customer_id).first()
+        if cust:
+            c_text = f"{cust.name} {cust.email or ''}".lower()
+            if any(k in c_text for k in ["uso interno", "interno", "taller", "dotacion", "dotación", "propio", "prisma lab"]):
+                is_internal = True
+    doc.is_internal_use = is_internal
+
     # Registrar en Inventario de Producto Terminado al convertir a Factura
     doc_items = db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).all()
     for item in doc_items:
         existing_prod = db.query(FinishedProduct).filter(
             FinishedProduct.name.ilike(item.product_name.strip()),
-            FinishedProduct.is_internal_use == False
+            FinishedProduct.is_internal_use == is_internal
         ).first()
 
         if existing_prod:
@@ -190,12 +243,17 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
             existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
             if item.unit_cost and item.unit_cost > 0:
                 existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
-            if item.unit_price and item.unit_price > 0:
+            if is_internal:
+                existing_prod.sale_price_with_margin = 0.0
+                existing_prod.is_internal_use = True
+            elif item.unit_price and item.unit_price > 0:
                 existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
             db.add(existing_prod)
         else:
+            serial_prefix = "INT" if is_internal else "PROD"
+            clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
             new_prod = FinishedProduct(
-                serial=f"PROD-{doc.doc_number.replace('FAC-', '').replace('COT-', '')}",
+                serial=f"{serial_prefix}-{clean_doc_num}",
                 name=item.product_name.strip(),
                 color="Multicolor",
                 material_type="Pieza 3D",
@@ -203,8 +261,9 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
                 outgoing_units=0,
                 current_stock_units=max(0, item.quantity),
                 unit_cost_cop=max(0.0, item.unit_cost or 0.0),
-                sale_price_with_margin=max(0.0, item.unit_price or 0.0),
-                min_stock_alert=5
+                sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
+                min_stock_alert=5,
+                is_internal_use=is_internal
             )
             db.add(new_prod)
 
@@ -212,25 +271,47 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     next_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
     entry_num = (next_entry.entry_number if next_entry else 0) + 1
 
-    j_debit = JournalEntry(
-        entry_number=entry_num,
-        entry_date=datetime.utcnow(),
-        puc_code="110505",
-        account_name="Caja General",
-        description=f"Recaudo por Factura {doc.doc_number}",
-        debit=doc.total,
-        credit=0.0
-    )
-
-    j_credit = JournalEntry(
-        entry_number=entry_num,
-        entry_date=datetime.utcnow(),
-        puc_code="413505",
-        account_name="Comercio al por Mayor y Menor (Ventas 3D)",
-        description=f"Ingreso por Venta Factura {doc.doc_number}",
-        debit=0.0,
-        credit=doc.total
-    )
+    if is_internal:
+        total_mfg_cost = sum((item.unit_cost or 0.0) * (item.quantity or 1) for item in doc_items)
+        if total_mfg_cost <= 0:
+            total_mfg_cost = doc.total
+        j_debit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="152405",
+            account_name="Herramientas y Accesorios de Taller (Uso Propio)",
+            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
+            debit=round(total_mfg_cost, 2),
+            credit=0.0
+        )
+        j_credit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="513505",
+            account_name="Dotación y Mantenimiento de Taller",
+            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
+            debit=0.0,
+            credit=round(total_mfg_cost, 2)
+        )
+    else:
+        j_debit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="110505",
+            account_name="Caja General",
+            description=f"Recaudo por Factura {doc.doc_number}",
+            debit=doc.total,
+            credit=0.0
+        )
+        j_credit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="413505",
+            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+            description=f"Ingreso por Venta Factura {doc.doc_number}",
+            debit=0.0,
+            credit=doc.total
+        )
 
     db.add(j_debit)
     db.add(j_credit)
@@ -251,8 +332,12 @@ def delete_sales_document(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     doc_info = f"{doc.doc_type} #{doc.doc_number}"
-    # Eliminar items asociados al documento
-    db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).delete()
+    
+    # Anular asientos contables asociados si era factura
+    db.query(JournalEntry).filter(
+        JournalEntry.description.ilike(f"%{doc.doc_number}%")
+    ).delete(synchronize_session=False)
+
     db.delete(doc)
     db.commit()
 

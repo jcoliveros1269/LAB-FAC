@@ -80,6 +80,7 @@ export default function Sales() {
   const DEFAULT_QUOTE_FORM = {
     customer_id: '',
     project_name: '',
+    is_internal_use: false,
     plates: [
       {
         id: 1,
@@ -599,8 +600,8 @@ export default function Sales() {
       const plateTotalCost = plateDirectWithAdd + plateLaborCost;
       const plateUnitCost = plateTotalCost / p.pQty;
 
-      // Margen según volumen de la placa (o total)
-      const plateMarginMult = p.pQty >= 10 ? 2.2 : p.pQty >= 5 ? 2.5 : 2.8;
+      // Margen según volumen de la placa (o total). Si es Uso Interno, el multiplicador es 1.0 (sin margen comercial)
+      const plateMarginMult = quoteForm.is_internal_use ? 1.0 : (p.pQty >= 10 ? 2.2 : p.pQty >= 5 ? 2.5 : 2.8);
       const plateTotalPrice = plateTotalCost * plateMarginMult;
       const plateUnitPrice = plateTotalPrice / p.pQty;
 
@@ -672,6 +673,7 @@ export default function Sales() {
       };
     });
 
+    const isInternal = Boolean(quoteForm.is_internal_use);
     const payload = {
       doc_number: docNumber,
       doc_type: docType,
@@ -681,12 +683,14 @@ export default function Sales() {
       tax: 0.0,
       total: totals.totalPrice,
       status: docType === 'FACTURA' ? 'INVOICED' : 'QUOTED',
+      is_internal_use: isInternal,
       items
     };
 
     try {
       const res = await salesService.createDocument(payload);
-      toast.success(`${docType === 'FACTURA' ? 'Factura' : 'Cotización'} ${docNumber} generada (${items.length} ${items.length === 1 ? 'ítem' : 'ítems'})`);
+      const internalMsg = isInternal ? ' (Enviado al apartado No a la Venta)' : '';
+      toast.success(`${docType === 'FACTURA' ? 'Factura' : 'Cotización'} ${docNumber} generada (${items.length} ${items.length === 1 ? 'ítem' : 'ítems'})${internalMsg}`);
       loadSalesData();
       if (res.data) {
         setSelectedDocForPrint(res.data);
@@ -701,6 +705,7 @@ export default function Sales() {
     const defaultForm = {
       customer_id: '',
       project_name: '',
+      is_internal_use: false,
       plates: [createDefaultPlate(1)],
       include_labor: true,
       labor_cost: 0,
@@ -924,9 +929,16 @@ export default function Sales() {
                           {formatDate(doc.created_at)}
                         </td>
                         <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${doc.doc_type === 'FACTURA' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-300 border border-slate-500/20'}`}>
-                            {doc.doc_type}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${doc.doc_type === 'FACTURA' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-300 border border-slate-500/20'}`}>
+                              {doc.doc_type}
+                            </span>
+                            {doc.is_internal_use && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1" title="Orden asignada a Uso Interno (No a la venta)">
+                                <Wrench className="w-2.5 h-2.5" /> Uso Interno
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 text-[#A0A0A0]">
                           {doc.customer ? doc.customer.name : 'Cliente General'}
@@ -1019,7 +1031,16 @@ export default function Sales() {
 
                 <select
                   value={quoteForm.customer_id}
-                  onChange={(e) => setQuoteForm({ ...quoteForm, customer_id: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const cust = customers.find(c => String(c.id) === String(val));
+                    const isInternal = cust && /uso interno|interno|taller|dotacion|dotación|propio|prisma lab/i.test(`${cust.name} ${cust.email || ''}`);
+                    setQuoteForm(prev => ({
+                      ...prev,
+                      customer_id: val,
+                      is_internal_use: isInternal ? true : (prev.customer_id ? prev.is_internal_use : false)
+                    }));
+                  }}
                   className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
                 >
                   <option value="">Cliente General (Sin asociar)</option>
@@ -1029,6 +1050,35 @@ export default function Sales() {
                     </option>
                   ))}
                 </select>
+
+                {/* Selector de Destino de la Orden / Factura */}
+                <div className="pt-2 border-t border-[#222222] flex items-center justify-between">
+                  <span className="text-[11px] text-[#A0A0A0]">Destino de la Orden:</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setQuoteForm(prev => ({ ...prev, is_internal_use: false }))}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all border ${
+                        !quoteForm.is_internal_use
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                          : 'bg-[#151515] text-[#777] border-[#2A2A2A] hover:text-[#AAA]'
+                      }`}
+                    >
+                      🏪 Venta Comercial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuoteForm(prev => ({ ...prev, is_internal_use: true }))}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all border ${
+                        quoteForm.is_internal_use
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                          : 'bg-[#151515] text-[#777] border-[#2A2A2A] hover:text-[#AAA]'
+                      }`}
+                    >
+                      🛠️ Uso Interno (Prisma Lab)
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
@@ -1042,6 +1092,19 @@ export default function Sales() {
                 />
               </div>
             </div>
+
+            {/* Aviso Informativo cuando está en modo Uso Interno */}
+            {quoteForm.is_internal_use && (
+              <div className="p-3 bg-amber-950/20 border border-amber-500/35 rounded-sm text-amber-200 text-xs flex items-center gap-2.5">
+                <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
+                <div>
+                  <strong className="text-amber-300 font-semibold">Orden asignada a Uso Interno (Prisma Lab):</strong>
+                  <p className="text-[11px] text-amber-200/80 mt-0.5">
+                    Al generar la factura, la pieza se enviará automáticamente a la sección <strong>"No a la Venta"</strong> en inventario (no saldrá en vitrina para venta) y en contabilidad se asentará estrictamente al <strong>costo de fabricación</strong> ($0 utilidad comercial).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Header de Placas con Botón Agregar Placa */}
             <div className="flex items-center justify-between bg-[#151515] p-3 rounded-sm border border-[#2A2A2A]">
