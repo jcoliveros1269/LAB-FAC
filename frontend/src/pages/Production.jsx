@@ -482,15 +482,17 @@ export default function Production({ setActiveTab }) {
         margin_percentage: 0.0,
         status: 'DISPONIBLE',
         is_internal_use: true,
+        skip_accounting: Boolean(formData.deduct_from_inventory),
         notes: `Pieza de uso interno / dotación de taller generada desde cálculo #${calcResult.project_code}`
       };
 
       await inventoryService.createProduct(productPayload);
-      toast.success(`Pieza '${calcResult.project_name}' guardada en Inventario de Uso Interno (${qty} unds)`);
+      toast.success(`Pieza '${calcResult.project_name}' guardada en Apartado No a la Venta (${qty} unds)`);
+      localStorage.setItem('prisma_lab_subtab_inventory', 'no_sale');
       if (setActiveTab) setActiveTab('inventory');
     } catch (err) {
-      console.error('Error al guardar en inventario de uso interno:', err);
-      toast.error(err.response?.data?.detail || 'Error guardando en inventario de uso interno');
+      console.error('Error al guardar en apartado no a la venta:', err);
+      toast.error(err.response?.data?.detail || 'Error guardando en apartado no a la venta');
     } finally {
       setLoading(false);
     }
@@ -1245,7 +1247,7 @@ export default function Production({ setActiveTab }) {
                   className="w-full py-2.5 bg-purple-700 hover:bg-purple-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 mt-4 transition-colors shadow-sm"
                 >
                   <Box className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  <span>Guardar en Inventario de Uso Interno</span>
+                  <span>Guardar en Apartado No a la Venta</span>
                 </button>
               ) : (
                 <button

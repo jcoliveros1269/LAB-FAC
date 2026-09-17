@@ -53,6 +53,7 @@ class FinishedProductBase(BaseModel):
     sale_price_with_margin: float = 0.0
     min_stock_alert: int = 5
     is_internal_use: Optional[bool] = False
+    skip_accounting: Optional[bool] = False
 
 class FinishedProductCreate(FinishedProductBase):
     pass

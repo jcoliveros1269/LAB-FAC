@@ -99,7 +99,8 @@ def create_sales_document(
     if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
         for item in doc.items:
             existing_prod = db.query(FinishedProduct).filter(
-                FinishedProduct.name.ilike(item.product_name.strip())
+                FinishedProduct.name.ilike(item.product_name.strip()),
+                FinishedProduct.is_internal_use == False
             ).first()
 
             if existing_prod:
@@ -180,7 +181,8 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     doc_items = db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).all()
     for item in doc_items:
         existing_prod = db.query(FinishedProduct).filter(
-            FinishedProduct.name.ilike(item.product_name.strip())
+            FinishedProduct.name.ilike(item.product_name.strip()),
+            FinishedProduct.is_internal_use == False
         ).first()
 
         if existing_prod:

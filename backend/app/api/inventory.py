@@ -6,6 +6,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.inventory import RawMaterial, FinishedProduct, AdditionalSupply
 from app.models.accounting import JournalEntry
+from app.models.sales import DocumentType, SalesDocumentItem
 from app.models.auth import User
 from app.core.security import require_permission
 from app.api.auth import log_audit_event
@@ -276,14 +277,16 @@ def get_finished_products(db: Session = Depends(get_db)):
 
 @router.post("/products", response_model=FinishedProductResponse)
 def create_finished_product(product: FinishedProductCreate, db: Session = Depends(get_db)):
-    db_product = FinishedProduct(**product.model_dump())
+    prod_data = product.model_dump()
+    skip_acc = prod_data.pop("skip_accounting", False)
+    db_product = FinishedProduct(**prod_data)
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
 
     # Registro de Asiento Contable Automático (Partida Doble)
     total_value = (db_product.initial_stock_units or 0) * (db_product.unit_cost_cop or 0.0)
-    if total_value > 0:
+    if not skip_acc and total_value > 0:
         entry_num = get_next_entry_number(db)
         prod_tag = f"[{db_product.serial}]" if db_product.serial else f"[PROD-{db_product.id}]"
         
@@ -317,6 +320,131 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
         db.commit()
 
     return db_product
+
+@router.post("/products/{product_id}/sell")
+def sell_vitrina_product(
+    product_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "write"))
+):
+    product = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    if product.is_internal_use:
+        raise HTTPException(
+            status_code=400,
+            detail="Este producto pertenece al Apartado No a la Venta (Uso Interno) y está estrictamente bloqueado para facturación."
+        )
+    
+    quantity = int(payload.get("quantity", 1))
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad a vender debe ser mayor a cero")
+    if quantity > (product.current_stock_units or 0):
+        raise HTTPException(status_code=400, detail=f"Stock insuficiente en vitrina (disponible: {product.current_stock_units} unds)")
+    
+    unit_price = float(payload.get("unit_price", product.sale_price_with_margin or 0.0))
+    customer_id = payload.get("customer_id")
+    total_sale = round(quantity * unit_price, 2)
+    cost_of_goods = round(quantity * (product.unit_cost_cop or 0.0), 2)
+    
+    # Descontar stock de vitrina
+    product.current_stock_units = max(0, (product.current_stock_units or 0) - quantity)
+    product.outgoing_units = (product.outgoing_units or 0) + quantity
+    db.add(product)
+    
+    # Crear Factura en Ventas
+    doc_count = db.query(DocumentType).filter(DocumentType.doc_type == "FACTURA").count() + 1
+    doc_number = f"FAC-VIT-{doc_count:04d}"
+    
+    doc = DocumentType(
+        doc_number=doc_number,
+        doc_type="FACTURA",
+        customer_id=customer_id if customer_id else None,
+        subtotal=total_sale,
+        discount=0.0,
+        tax=0.0,
+        total=total_sale,
+        status="INVOICED"
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    
+    # Item de factura
+    item = SalesDocumentItem(
+        document_id=doc.id,
+        product_name=f"{product.name} ({product.material_type or '3D'} {product.color or ''})",
+        quantity=quantity,
+        unit_cost=product.unit_cost_cop or 0.0,
+        unit_price=unit_price,
+        total_price=total_sale
+    )
+    db.add(item)
+    
+    # Asientos Contables: Débito Caja 110505, Crédito Ventas 413505
+    entry_num = get_next_entry_number(db)
+    j1 = JournalEntry(
+        entry_number=entry_num,
+        entry_date=datetime.utcnow(),
+        puc_code="110505",
+        account_name="Caja General",
+        description=f"Venta Vitrina: {product.name} ({quantity} unds) Factura {doc_number}",
+        debit=total_sale,
+        credit=0.0
+    )
+    j2 = JournalEntry(
+        entry_number=entry_num,
+        entry_date=datetime.utcnow(),
+        puc_code="413505",
+        account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+        description=f"Venta Vitrina Factura {doc_number}",
+        debit=0.0,
+        credit=total_sale
+    )
+    db.add(j1)
+    db.add(j2)
+    
+    # Costo de ventas: Débito 613505, Crédito 143005
+    if cost_of_goods > 0:
+        entry_num_cogs = get_next_entry_number(db)
+        j_cogs = JournalEntry(
+            entry_number=entry_num_cogs,
+            entry_date=datetime.utcnow(),
+            puc_code="613505",
+            account_name="Costo de Ventas y Producción",
+            description=f"Costo Mercancía Vendida Vitrina: {product.name} ({quantity} unds)",
+            debit=cost_of_goods,
+            credit=0.0
+        )
+        j_inv = JournalEntry(
+            entry_number=entry_num_cogs,
+            entry_date=datetime.utcnow(),
+            puc_code="143005",
+            account_name="Inventario de Productos Terminados",
+            description=f"Salida Stock Vitrina: {product.name} ({quantity} unds)",
+            debit=0.0,
+            credit=cost_of_goods
+        )
+        db.add(j_cogs)
+        db.add(j_inv)
+        
+    db.commit()
+    
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="sales",
+        action="SELL_VITRINA_PRODUCT",
+        description=f"Facturó producto de vitrina: {product.name} x{quantity} (Factura {doc_number})",
+        user_id=current_user.id
+    )
+    
+    return {
+        "message": f"Factura {doc_number} generada exitosamente y {quantity} unds descontadas de vitrina",
+        "doc_number": doc_number,
+        "document_id": doc.id
+    }
 
 @router.delete("/products/{product_id}")
 def delete_finished_product(

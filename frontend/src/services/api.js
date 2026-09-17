@@ -58,6 +58,7 @@ export const inventoryService = {
   
   getProducts: () => api.get('/inventory/products'),
   createProduct: (data) => api.post('/inventory/products', data),
+  sellProduct: (id, data) => api.post(`/inventory/products/${id}/sell`, data),
   deleteProduct: (id) => api.delete(`/inventory/products/${id}`),
 
   getAdditionalSupplies: (params) => api.get('/inventory/additional-supplies', { params }),
