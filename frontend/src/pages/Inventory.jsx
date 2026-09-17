@@ -277,7 +277,7 @@ export default function Inventory() {
       toast.success(`Insumo '${name}' eliminado`);
       loadInventory();
     } catch (err) {
-      toast.error('Error eliminando insumo');
+      toast.error(err.response?.data?.detail || 'Error eliminando insumo');
     }
   };
 
@@ -288,7 +288,7 @@ export default function Inventory() {
       toast.success(`Producto '${name}' eliminado`);
       loadInventory();
     } catch (err) {
-      toast.error('Error eliminando producto terminado');
+      toast.error(err.response?.data?.detail || 'Error eliminando producto terminado');
     }
   };
 
@@ -386,7 +386,7 @@ export default function Inventory() {
       toast.success(`Insumo '${name}' eliminado`);
       loadInventory();
     } catch (err) {
-      toast.error('Error eliminando insumo');
+      toast.error(err.response?.data?.detail || 'Error eliminando insumo');
     }
   };
 

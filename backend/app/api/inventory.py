@@ -155,12 +155,13 @@ def create_raw_material(
         db.add(j_credit)
         db.commit()
 
+    mat_code = db_material.article_code or db_material.name or "S/C"
     log_audit_event(
         db=db,
         username=current_user.username,
         module="inventory",
         action="CREATE_MATERIAL",
-        description=f"Registró materia prima: {db_material.material_type} {db_material.color} ({db_material.code})",
+        description=f"Registró materia prima: {db_material.material_type} {db_material.color} ({mat_code})",
         user_id=current_user.id
     )
 
@@ -213,7 +214,8 @@ def delete_raw_material(
     if not db_material:
         raise HTTPException(status_code=404, detail="Material no encontrado")
     
-    mat_desc = f"{db_material.material_type} {db_material.color} ({db_material.code})"
+    mat_code = db_material.article_code or db_material.name or "S/C"
+    mat_desc = f"{db_material.material_type} {db_material.color} ({mat_code})"
     db.delete(db_material)
     db.commit()
 
