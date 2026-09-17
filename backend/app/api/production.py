@@ -166,7 +166,12 @@ def calculate_3d_production(
         discount_pct = vol_discount_pct
         discount_amt = max(0.0, base_suggested_price - suggested_price)
 
-    final_price = calc_input.sale_price_override if (calc_input.sale_price_override and calc_input.sale_price_override > 0) else suggested_price
+    is_internal = bool(calc_input.is_internal_use)
+    if is_internal:
+        suggested_price = 0.0
+        final_price = 0.0
+    else:
+        final_price = calc_input.sale_price_override if (calc_input.sale_price_override and calc_input.sale_price_override > 0) else suggested_price
 
     db_calc = ProductionCalculation(
         project_code=project_code,
@@ -179,11 +184,12 @@ def calculate_3d_production(
         depreciation_cost=depreciation_cost,
         labor_cost=labor_cost,
         additional_expenses=add_expenses,
-        discount_percentage=discount_pct,
-        discount_amount=discount_amt,
+        discount_percentage=discount_pct if not is_internal else 0.0,
+        discount_amount=discount_amt if not is_internal else 0.0,
         total_unit_cost=total_unit_cost,
         suggested_price_margin=suggested_price,
         sale_price_override=final_price,
+        is_internal_use=is_internal,
         filament1_type=filaments_list[0][0] if len(filaments_list) > 0 else None,
         filament1_color=filaments_list[0][1] if len(filaments_list) > 0 else None,
         filament1_grams=filaments_list[0][2] if len(filaments_list) > 0 else 0.0,
@@ -205,12 +211,18 @@ def calculate_3d_production(
     if calc_input.deduct_from_inventory and (material_cost * calc_input.quantity) > 0:
         total_mat_val = material_cost * calc_input.quantity
         entry_num = get_next_entry_number(db)
+        
+        # Si es Uso Interno, asentar como Gasto Operativo / Mantenimiento; si es venta, Costo de Ventas
+        puc_deb = "513505" if is_internal else "613505"
+        acc_deb = "Gastos Mantenimiento y Dotación Taller" if is_internal else "Costo de Ventas y Producción"
+        prefix_desc = "Uso Interno Prisma" if is_internal else "Producción 3D"
+        
         j_debit = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="613505",
-            account_name="Costo de Ventas y Producción",
-            description=f"Consumo Filamento Producción 3D #{project_code} ({calc_input.project_name})",
+            puc_code=puc_deb,
+            account_name=acc_deb,
+            description=f"Consumo Filamento {prefix_desc} #{project_code} ({calc_input.project_name})",
             debit=round(total_mat_val, 2),
             credit=0.0
         )
@@ -219,7 +231,7 @@ def calculate_3d_production(
             entry_date=datetime.utcnow(),
             puc_code="140505",
             account_name="Inventario de Materias Primas / Filamentos",
-            description=f"Consumo Filamento Producción 3D #{project_code}",
+            description=f"Salida Filamento {prefix_desc} #{project_code}",
             debit=0.0,
             credit=round(total_mat_val, 2)
         )

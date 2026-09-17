@@ -286,21 +286,29 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
     if total_value > 0:
         entry_num = get_next_entry_number(db)
         prod_tag = f"[{db_product.serial}]" if db_product.serial else f"[PROD-{db_product.id}]"
+        
+        is_int = bool(db_product.is_internal_use)
+        puc_deb = "152405" if is_int else "143005"
+        acc_deb = "Herramientas y Accesorios de Taller (Uso Propio)" if is_int else "Inventario de Productos Terminados"
+        puc_cred = "513505" if is_int else "613505"
+        acc_cred = "Dotación y Mantenimiento de Taller" if is_int else "Costo de Ventas y Producción"
+        tipo_label = "Pieza Uso Interno" if is_int else "Producto Terminado"
+        
         j_debit = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="143005",
-            account_name="Inventario de Productos Terminados",
-            description=f"Alta Producto Terminado: {db_product.name} {prod_tag} ({db_product.initial_stock_units} unids)",
+            puc_code=puc_deb,
+            account_name=acc_deb,
+            description=f"Alta {tipo_label}: {db_product.name} {prod_tag} ({db_product.initial_stock_units} unids)",
             debit=round(total_value, 2),
             credit=0.0
         )
         j_credit = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="613505",
-            account_name="Costo de Ventas y Producción",
-            description=f"Alta Producto Terminado: {db_product.name} {prod_tag}",
+            puc_code=puc_cred,
+            account_name=acc_cred,
+            description=f"Alta {tipo_label}: {db_product.name} {prod_tag}",
             debit=0.0,
             credit=round(total_value, 2)
         )
@@ -321,10 +329,10 @@ def delete_finished_product(
         raise HTTPException(status_code=404, detail="Producto terminado no encontrado")
     
     prod_name = product.name
-    # Buscar asientos contables asociados al producto terminado (PUC 143005)
+    # Buscar asientos contables asociados al producto terminado (PUC 143005 o 152405)
     entry_nums_to_delete = set()
     prod_entries = db.query(JournalEntry).filter(
-        JournalEntry.puc_code == "143005",
+        JournalEntry.puc_code.in_(["143005", "152405"]),
         JournalEntry.description.ilike(f"%{prod_name}%")
     ).all()
     for pe in prod_entries:

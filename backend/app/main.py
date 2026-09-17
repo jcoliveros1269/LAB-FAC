@@ -50,6 +50,18 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN permissions_matrix TEXT"))
             conn.commit()
 
+        res_prod = conn.execute(text("PRAGMA table_info(production_calculations)"))
+        cols_prod = [r[1] for r in res_prod.fetchall()]
+        if cols_prod and "is_internal_use" not in cols_prod:
+            conn.execute(text("ALTER TABLE production_calculations ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
+            conn.commit()
+
+        res_fp = conn.execute(text("PRAGMA table_info(finished_products)"))
+        cols_fp = [r[1] for r in res_fp.fetchall()]
+        if cols_fp and "is_internal_use" not in cols_fp:
+            conn.execute(text("ALTER TABLE finished_products ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
+            conn.commit()
+
         # Auto-corregir escalas de multiplicadores de volumen si tienen valores viejos inflados (ej: 5.0)
         try:
             res_vd = conn.execute(text("SELECT id, suggested_price_multiplier FROM volume_discounts")).fetchall()

@@ -42,6 +42,7 @@ export default function Production({ setActiveTab }) {
   // Filtros y Búsqueda para el Histórico
   const [historySearch, setHistorySearch] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState('ALL');
+  const [historyDestinationFilter, setHistoryDestinationFilter] = useState('ALL');
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
 
@@ -65,7 +66,8 @@ export default function Production({ setActiveTab }) {
     discount_percentage: 0.0,
     discount_amount: 0.0,
     additional_expenses: 0.0,
-    deduct_from_inventory: false
+    deduct_from_inventory: false,
+    is_internal_use: false
   };
 
   // Formulario de Calculadora 3D con persistencia en localStorage
@@ -346,6 +348,7 @@ export default function Production({ setActiveTab }) {
         discount_percentage: parseFloat(formData.discount_percentage) || 0.0,
         discount_amount: parseFloat(formData.discount_amount) || 0.0,
         deduct_from_inventory: formData.deduct_from_inventory,
+        is_internal_use: !!formData.is_internal_use,
         filaments: validFilaments,
         filament1_type: validFilaments[0]?.filament_type || 'PETG',
         filament1_color: validFilaments[0]?.color || 'Blanco',
@@ -455,6 +458,44 @@ export default function Production({ setActiveTab }) {
     }
   };
 
+  const handleSaveToInternalInventory = async () => {
+    if (!calcResult) return;
+    try {
+      setLoading(true);
+      const filamentDesc = (formData.filaments || [])
+        .filter(f => parseFloat(f.grams) > 0)
+        .map(f => `${f.type} ${f.color}`)
+        .join(' + ');
+
+      const qty = parseInt(calcResult.quantity, 10) || 1;
+      const unitCost = calcResult.total_unit_cost || 0;
+
+      const productPayload = {
+        name: calcResult.project_name,
+        serial: `INT-${calcResult.project_code}`,
+        category: 'DOTACION_TALLER',
+        material_type: calcResult.filament1_type || '3D',
+        color: calcResult.filament1_color || filamentDesc || 'Taller',
+        current_stock_units: qty,
+        unit_cost_cop: unitCost,
+        sale_price_with_margin: 0.0,
+        margin_percentage: 0.0,
+        status: 'DISPONIBLE',
+        is_internal_use: true,
+        notes: `Pieza de uso interno / dotación de taller generada desde cálculo #${calcResult.project_code}`
+      };
+
+      await inventoryService.createProduct(productPayload);
+      toast.success(`Pieza '${calcResult.project_name}' guardada en Inventario de Uso Interno (${qty} unds)`);
+      if (setActiveTab) setActiveTab('inventory');
+    } catch (err) {
+      console.error('Error al guardar en inventario de uso interno:', err);
+      toast.error(err.response?.data?.detail || 'Error guardando en inventario de uso interno');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredHistory = history.filter((row) => {
     const q = historySearch.toLowerCase().trim();
     const matchesSearch =
@@ -473,9 +514,14 @@ export default function Production({ setActiveTab }) {
       (row.filament3_type && row.filament3_type.toUpperCase() === historyTypeFilter) ||
       (row.filament4_type && row.filament4_type.toUpperCase() === historyTypeFilter);
 
+    const matchesDestination =
+      historyDestinationFilter === 'ALL' ||
+      (historyDestinationFilter === 'INTERNAL' && row.is_internal_use) ||
+      (historyDestinationFilter === 'COMMERCIAL' && !row.is_internal_use);
+
     const matchesDate = isDateInRange(row.created_at, historyStartDate, historyEndDate);
 
-    return matchesSearch && matchesType && matchesDate;
+    return matchesSearch && matchesType && matchesDestination && matchesDate;
   });
 
   const resetFormData = () => {
@@ -490,7 +536,8 @@ export default function Production({ setActiveTab }) {
       discount_percentage: 0.0,
       discount_amount: 0.0,
       additional_expenses: 0.0,
-      deduct_from_inventory: false
+      deduct_from_inventory: false,
+      is_internal_use: false
     });
     setCalcResult(null);
     try {
@@ -538,6 +585,56 @@ export default function Production({ setActiveTab }) {
               >
                 <RotateCcw className="w-3 h-3" strokeWidth={1.5} /> Limpiar
               </button>
+            </div>
+
+            {/* Destino de la Pieza: Venta vs Uso Interno */}
+            <div className="bg-[#101010] p-2.5 rounded-sm border border-[#2A2A2A] space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-[#A0A0A0] uppercase font-semibold tracking-wider">
+                  Destino de la Pieza
+                </label>
+                <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded ${
+                  formData.is_internal_use
+                    ? 'bg-purple-950/60 text-purple-300 border border-purple-800/60'
+                    : 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/60'
+                }`}>
+                  {formData.is_internal_use ? 'Dotación Interna' : 'Venta Comercial'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, is_internal_use: false })}
+                  className={`px-3 py-2 rounded-sm text-xs font-medium flex items-center justify-center gap-2 border transition-all ${
+                    !formData.is_internal_use
+                      ? 'bg-emerald-950/40 text-emerald-300 border-emerald-600 font-semibold shadow-sm ring-1 ring-emerald-500/30'
+                      : 'bg-[#151515] text-[#888888] border-[#2A2A2A] hover:text-[#EAEAEA]'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Para Venta a Cliente</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, is_internal_use: true, deduct_from_inventory: true })}
+                  className={`px-3 py-2 rounded-sm text-xs font-medium flex items-center justify-center gap-2 border transition-all ${
+                    formData.is_internal_use
+                      ? 'bg-purple-950/50 text-purple-300 border-purple-500 font-semibold shadow-sm ring-1 ring-purple-500/30'
+                      : 'bg-[#151515] text-[#888888] border-[#2A2A2A] hover:text-[#EAEAEA]'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Para Uso Interno (Prisma Lab)</span>
+                </button>
+              </div>
+              {formData.is_internal_use && (
+                <div className="text-[10px] text-purple-300/90 bg-purple-950/30 border border-purple-800/40 p-2 rounded flex items-start gap-1.5 font-mono">
+                  <span className="text-purple-400 font-bold">ℹ</span>
+                  <span>
+                    <strong>Pieza de Taller / Dotación:</strong> No aplica margen comercial (Precio venta = $0 COP). El consumo de filamento se contabiliza como gasto operativo de mantenimiento y dotación de taller (PUC 513505).
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1028,7 +1125,14 @@ export default function Production({ setActiveTab }) {
           {/* Resultado */}
           <div className="lg:col-span-5 bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm flex flex-col justify-between text-xs">
             <div>
-              <h3 className="font-semibold text-[#EAEAEA] mb-3">Desglose de Costos</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-[#EAEAEA]">Desglose de Costos</h3>
+                {calcResult?.is_internal_use && (
+                  <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/60 border border-purple-800/60 px-2 py-0.5 rounded-sm flex items-center gap-1 font-mono">
+                    <Wrench className="w-3 h-3 text-purple-400" /> USO INTERNO
+                  </span>
+                )}
+              </div>
 
               {!calcResult ? (
                 <div className="py-12 text-center text-[#666666]">
@@ -1090,39 +1194,68 @@ export default function Production({ setActiveTab }) {
                         </p>
                       )}
                     </div>
-                    <div className="pt-2 border-t border-[#2A2A2A]">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-emerald-400 uppercase font-medium">
-                          Precio Sugerido {calcResult.quantity > 1 ? `(${calcResult.quantity} unds)` : ''}
-                        </span>
-                        {(calcResult.discount_percentage > 0 || calcResult.discount_amount > 0) && (
-                          <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">
-                            Desc. Aplicado
+
+                    {calcResult.is_internal_use ? (
+                      <div className="pt-2 border-t border-[#2A2A2A]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-purple-400 uppercase font-medium">
+                            Precio Sugerido Venta
                           </span>
+                          <span className="text-[10px] text-purple-300 bg-purple-950/60 border border-purple-850/60 px-1.5 py-0.5 rounded font-mono font-semibold">
+                            DOTACIÓN TALLER
+                          </span>
+                        </div>
+                        <p className="text-xl font-bold text-purple-300 font-mono">$0 COP</p>
+                        <p className="text-[10px] text-[#888888] mt-0.5">
+                          Esta pieza es para dotación/uso interno de Prisma Lab. No se factura a clientes.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="pt-2 border-t border-[#2A2A2A]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-emerald-400 uppercase font-medium">
+                            Precio Sugerido {calcResult.quantity > 1 ? `(${calcResult.quantity} unds)` : ''}
+                          </span>
+                          {(calcResult.discount_percentage > 0 || calcResult.discount_amount > 0) && (
+                            <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">
+                              Desc. Aplicado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xl font-bold text-emerald-400 font-mono">
+                          ${((calcResult.suggested_price_margin * (calcResult.quantity || 1))).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
+                        </p>
+                        {calcResult.quantity > 1 && (
+                          <p className="text-[11px] text-emerald-500/80 font-mono mt-0.5">
+                            Precio Unitario: <span className="text-emerald-400 font-semibold">${calcResult.suggested_price_margin.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
+                          </p>
                         )}
                       </div>
-                      <p className="text-xl font-bold text-emerald-400 font-mono">
-                        ${((calcResult.suggested_price_margin * (calcResult.quantity || 1))).toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
-                      </p>
-                      {calcResult.quantity > 1 && (
-                        <p className="text-[11px] text-emerald-500/80 font-mono mt-0.5">
-                          Precio Unitario: <span className="text-emerald-400 font-semibold">${calcResult.suggested_price_margin.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP</span>
-                        </p>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
             {calcResult && (
-              <button
-                onClick={handleConvertToQuote}
-                className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded-sm flex items-center justify-center gap-2 mt-4 transition-colors"
-              >
-                <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>Convertir en Cotización</span>
-              </button>
+              calcResult.is_internal_use ? (
+                <button
+                  onClick={handleSaveToInternalInventory}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-purple-700 hover:bg-purple-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 mt-4 transition-colors shadow-sm"
+                >
+                  <Box className="w-3.5 h-3.5" strokeWidth={1.5} />
+                  <span>Guardar en Inventario de Uso Interno</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleConvertToQuote}
+                  className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded-sm flex items-center justify-center gap-2 mt-4 transition-colors"
+                >
+                  <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
+                  <span>Convertir en Cotización</span>
+                </button>
+              )
             )}
           </div>
         </div>
@@ -1169,6 +1302,20 @@ export default function Production({ setActiveTab }) {
                 </select>
               </div>
 
+              {/* Filtro Destino (Comercial vs Uso Interno) */}
+              <div className="flex items-center gap-1.5 bg-[#101010] border border-[#2A2A2A] rounded-sm px-2.5 py-1">
+                <Filter className="w-3 h-3 text-[#666666]" />
+                <select
+                  value={historyDestinationFilter}
+                  onChange={(e) => setHistoryDestinationFilter(e.target.value)}
+                  className="bg-transparent text-xs text-[#A0A0A0] focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL" className="bg-[#1A1A1A]">Todos los Destinos</option>
+                  <option value="COMMERCIAL" className="bg-[#1A1A1A]">Venta Comercial</option>
+                  <option value="INTERNAL" className="bg-[#1A1A1A]">Uso Interno</option>
+                </select>
+              </div>
+
               {/* Filtro de Fechas */}
               <DateRangeFilter
                 startDate={historyStartDate}
@@ -1179,11 +1326,12 @@ export default function Production({ setActiveTab }) {
                 }}
               />
 
-              {(historySearch || historyTypeFilter !== 'ALL' || historyStartDate || historyEndDate) && (
+              {(historySearch || historyTypeFilter !== 'ALL' || historyDestinationFilter !== 'ALL' || historyStartDate || historyEndDate) && (
                 <button
                   onClick={() => {
                     setHistorySearch('');
                     setHistoryTypeFilter('ALL');
+                    setHistoryDestinationFilter('ALL');
                     setHistoryStartDate('');
                     setHistoryEndDate('');
                   }}
@@ -1238,7 +1386,18 @@ export default function Production({ setActiveTab }) {
                           {formatDate(row.created_at)}
                         </td>
                         <td className="py-1.5 px-2 font-medium text-[#EAEAEA]">
-                          <div className="break-words">{row.project_name}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="break-words">{row.project_name}</span>
+                            {row.is_internal_use ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-purple-950/70 text-purple-300 border border-purple-800/70 font-mono font-semibold" title="Dotación y Consumo Interno Prisma Lab">
+                                USO INTERNO
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 font-mono" title="Venta Comercial">
+                                VENTA
+                              </span>
+                            )}
+                          </div>
                           {(row.filament1_type || row.filament2_type) && (
                             <div className="text-[9px] text-[#777777] flex flex-wrap gap-1 mt-0.5">
                               {[
@@ -1266,7 +1425,13 @@ export default function Production({ setActiveTab }) {
                           )}
                         </td>
                         <td className="py-1.5 px-1.5 text-right text-[#EAEAEA] font-mono font-semibold">${(row.total_unit_cost || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                        <td className="py-1.5 px-1.5 text-right font-bold text-emerald-400 font-mono">${(row.suggested_price_margin || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                        <td className="py-1.5 px-1.5 text-right font-bold font-mono">
+                          {row.is_internal_use ? (
+                            <span className="text-purple-400 font-normal text-[10px]">$0 (Uso Interno)</span>
+                          ) : (
+                            <span className="text-emerald-400">${(row.suggested_price_margin || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                          )}
+                        </td>
                         <td className="py-1.5 px-1.5 text-center flex items-center justify-center gap-1">
                           {canEdit && (
                             <button

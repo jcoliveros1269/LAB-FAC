@@ -52,6 +52,7 @@ class FinishedProductBase(BaseModel):
     unit_cost_cop: float = 0.0
     sale_price_with_margin: float = 0.0
     min_stock_alert: int = 5
+    is_internal_use: Optional[bool] = False
 
 class FinishedProductCreate(FinishedProductBase):
     pass

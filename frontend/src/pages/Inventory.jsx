@@ -25,6 +25,7 @@ export default function Inventory() {
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [productTypeFilter, setProductTypeFilter] = useState('ALL');
   const [productStockFilter, setProductStockFilter] = useState('ALL');
+  const [productDestinationFilter, setProductDestinationFilter] = useState('ALL');
   const [supplyTypeFilter, setSupplyTypeFilter] = useState('ALL');
   const [materialStartDate, setMaterialStartDate] = useState('');
   const [materialEndDate, setMaterialEndDate] = useState('');
@@ -110,6 +111,23 @@ export default function Inventory() {
   // Modal Edición Insumo Papelería / Mantenimiento
   const [editingSupply, setEditingSupply] = useState(null);
   const [editSupplyData, setEditSupplyData] = useState(null);
+
+  // Modal Nuevo Producto Terminado / Pieza de Taller
+  const DEFAULT_NEW_PRODUCT = {
+    name: '',
+    serial: '',
+    category: 'PRODUCTO_TERMINADO',
+    material_type: 'PETG',
+    color: 'Blanco',
+    current_stock_units: 1,
+    unit_cost_cop: 0,
+    sale_price_with_margin: 0,
+    status: 'DISPONIBLE',
+    is_internal_use: false,
+    notes: ''
+  };
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [newProduct, setNewProduct] = useState(DEFAULT_NEW_PRODUCT);
 
   const loadInventory = async () => {
     setLoading(true);
@@ -281,6 +299,37 @@ export default function Inventory() {
     }
   };
 
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const isInternal = !!newProduct.is_internal_use;
+      const payload = {
+        name: newProduct.name.trim(),
+        serial: newProduct.serial ? newProduct.serial.trim() : (isInternal ? `INT-${Date.now().toString().slice(-6)}` : `PRD-${Date.now().toString().slice(-6)}`),
+        category: isInternal ? 'DOTACION_TALLER' : (newProduct.category || 'PRODUCTO_TERMINADO'),
+        material_type: newProduct.material_type || 'Pieza 3D',
+        color: newProduct.color || 'Multicolor',
+        current_stock_units: parseInt(newProduct.current_stock_units, 10) || 1,
+        unit_cost_cop: parseFloat(newProduct.unit_cost_cop) || 0,
+        sale_price_with_margin: isInternal ? 0.0 : (parseFloat(newProduct.sale_price_with_margin) || 0.0),
+        status: 'DISPONIBLE',
+        is_internal_use: isInternal,
+        notes: newProduct.notes || (isInternal ? 'Pieza registrada para dotación / uso interno del taller' : '')
+      };
+      await inventoryService.createProduct(payload);
+      toast.success(`Producto '${payload.name}' registrado exitosamente`);
+      setShowProductModal(false);
+      setNewProduct(DEFAULT_NEW_PRODUCT);
+      loadInventory();
+    } catch (err) {
+      console.error('Error creando producto terminado:', err);
+      toast.error(err.response?.data?.detail || 'Error creando producto terminado');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteProduct = async (id, name) => {
     if (!window.confirm(`¿Estás seguro de eliminar el producto '${name}' del inventario? Esta acción no se puede deshacer.`)) return;
     try {
@@ -414,9 +463,18 @@ export default function Inventory() {
 
   // Métricas para Productos Terminados (SIEMPRE POSITIVO)
   const totalProductsCostValue = products.reduce((acc, p) => acc + (Math.max(0, p.current_stock_units || 0) * Math.max(0, p.unit_cost_cop || 0)), 0);
-  const totalProductsSaleValue = products.reduce((acc, p) => acc + (Math.max(0, p.current_stock_units || 0) * Math.max(0, p.sale_price_with_margin || 0)), 0);
+  const totalProductsSaleValue = products
+    .filter(p => !p.is_internal_use)
+    .reduce((acc, p) => acc + (Math.max(0, p.current_stock_units || 0) * Math.max(0, p.sale_price_with_margin || 0)), 0);
   const totalProductsUnits = products.reduce((acc, p) => acc + Math.max(0, p.current_stock_units || 0), 0);
-  const totalProductsProjectedProfit = Math.max(0, totalProductsSaleValue - totalProductsCostValue);
+  const totalCommercialCost = products
+    .filter(p => !p.is_internal_use)
+    .reduce((acc, p) => acc + (Math.max(0, p.current_stock_units || 0) * Math.max(0, p.unit_cost_cop || 0)), 0);
+  const totalProductsProjectedProfit = Math.max(0, totalProductsSaleValue - totalCommercialCost);
+  const internalProductsCount = products.filter(p => p.is_internal_use).length;
+  const internalProductsUnits = products
+    .filter(p => p.is_internal_use)
+    .reduce((acc, p) => acc + Math.max(0, p.current_stock_units || 0), 0);
 
   // Métricas para Papelería / Mantenimiento
   const totalSuppliesValue = supplies.reduce((acc, s) => acc + (Math.max(0, s.stock_units || 0) * Math.max(0, s.unit_cost_cop || 0)), 0);
@@ -470,7 +528,12 @@ export default function Inventory() {
       matchesStock = (p.current_stock_units || 0) <= 0;
     }
 
-    return matchesSearch && matchesType && matchesStock;
+    const matchesDestination =
+      productDestinationFilter === 'ALL' ||
+      (productDestinationFilter === 'INTERNAL' && p.is_internal_use) ||
+      (productDestinationFilter === 'COMMERCIAL' && !p.is_internal_use);
+
+    return matchesSearch && matchesType && matchesStock && matchesDestination;
   });
 
   const filteredSupplies = supplies.filter((s) => {
@@ -571,7 +634,9 @@ export default function Inventory() {
               <p className="text-lg font-bold text-sky-400 font-mono mt-0.5">
                 ${totalProductsSaleValue.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
               </p>
-              <span className="text-[10px] text-[#666666]">Ingreso potencial con margen</span>
+              <span className="text-[10px] text-[#666666]">
+                Venta comercial {internalProductsCount > 0 ? `(${internalProductsCount} uso interno excl.)` : 'con margen'}
+              </span>
             </div>
             <div className="p-2 bg-sky-500/10 rounded-sm text-sky-400 border border-sky-500/20">
               <Layers className="w-5 h-5" strokeWidth={1.5} />
@@ -584,7 +649,9 @@ export default function Inventory() {
               <p className="text-lg font-bold text-[#EAEAEA] font-mono mt-0.5">
                 {totalProductsUnits.toLocaleString('es-CO')} und
               </p>
-              <span className="text-[10px] text-[#666666]">{products.length} productos registrados</span>
+              <span className="text-[10px] text-[#666666]">
+                {products.length} piezas {internalProductsUnits > 0 ? `(${internalProductsUnits} unds uso interno)` : ''}
+              </span>
             </div>
             <div className="p-2 bg-slate-500/10 rounded-sm text-slate-400 border border-slate-500/20">
               <Package className="w-5 h-5" strokeWidth={1.5} />
@@ -791,6 +858,20 @@ export default function Inventory() {
 
           {activeSubtab === 'products' && (
             <>
+              {/* Filtro Destino Producto */}
+              <div className="flex items-center gap-1.5 bg-[#101010] border border-[#2A2A2A] rounded-sm px-2.5 py-1">
+                <Filter className="w-3 h-3 text-[#666666]" />
+                <select
+                  value={productDestinationFilter}
+                  onChange={(e) => setProductDestinationFilter(e.target.value)}
+                  className="bg-transparent text-xs text-[#A0A0A0] focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL" className="bg-[#1A1A1A]">Todos los Destinos</option>
+                  <option value="COMMERCIAL" className="bg-[#1A1A1A]">Venta Comercial</option>
+                  <option value="INTERNAL" className="bg-[#1A1A1A]">Uso Interno (Taller)</option>
+                </select>
+              </div>
+
               {/* Filtro Tipo Producto */}
               <div className="flex items-center gap-1.5 bg-[#101010] border border-[#2A2A2A] rounded-sm px-2.5 py-1">
                 <Filter className="w-3 h-3 text-[#666666]" />
@@ -820,6 +901,27 @@ export default function Inventory() {
                   <option value="OUT_OF_STOCK" className="bg-[#1A1A1A]">Agotado / Sin Stock</option>
                 </select>
               </div>
+
+              {(searchTerm || productTypeFilter !== 'ALL' || productStockFilter !== 'ALL' || productDestinationFilter !== 'ALL') && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setProductTypeFilter('ALL');
+                    setProductStockFilter('ALL');
+                    setProductDestinationFilter('ALL');
+                  }}
+                  className="text-xs text-slate-400 hover:text-emerald-400 underline whitespace-nowrap px-1"
+                >
+                  Limpiar Filtros
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowProductModal(true)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-sm text-xs flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" strokeWidth={1.5} /> Nueva Pieza / Producto
+              </button>
             </>
           )}
 
@@ -1031,7 +1133,20 @@ export default function Inventory() {
                     return (
                       <tr key={p.id} className="hover:bg-[#222222] transition-colors">
                         <td className="py-2 px-2 font-mono text-slate-300 font-medium">{p.serial || '-'}</td>
-                        <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">{p.name}</td>
+                        <td className="py-2 px-2 font-medium text-[#EAEAEA] break-words">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{p.name}</span>
+                            {p.is_internal_use ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-purple-950/70 text-purple-300 border border-purple-800/70 font-mono font-semibold" title="Dotación y Consumo Interno de Taller">
+                                USO INTERNO
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 font-mono" title="Producto para Venta">
+                                VENTA
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-2 px-1.5 text-[#A0A0A0] break-words">{p.color || 'Multicolor'}</td>
                         <td className="py-2 px-1.5 text-[#666666] font-mono">
                           <span className="px-1.5 py-0.5 rounded bg-[#101010] border border-[#2A2A2A] text-[9px]">
@@ -1044,14 +1159,22 @@ export default function Inventory() {
                         <td className="py-2 px-1.5 text-right text-[#A0A0A0] font-mono">
                           ${safeUnitCost.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-1.5 text-right font-semibold text-emerald-400 font-mono">
-                          ${safeSalePrice.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td className="py-2 px-1.5 text-right font-semibold font-mono">
+                          {p.is_internal_use ? (
+                            <span className="text-purple-400/80 font-normal text-[10px]">N/A (Dotación)</span>
+                          ) : (
+                            <span className="text-emerald-400">${safeSalePrice.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          )}
                         </td>
                         <td className="py-2 px-1.5 text-right text-[#EAEAEA] font-mono font-medium">
                           ${totalCostVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-1.5 text-right text-emerald-400 font-mono font-bold">
-                          ${totalSaleVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td className="py-2 px-1.5 text-right font-mono font-bold">
+                          {p.is_internal_use ? (
+                            <span className="text-[#666666] font-normal text-[10px]">-</span>
+                          ) : (
+                            <span className="text-emerald-400">${totalSaleVal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          )}
                         </td>
                         <td className="py-2 px-1 text-center">
                           {isAvailable ? (
@@ -1389,6 +1512,191 @@ export default function Inventory() {
               >
                 <Save className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Guardar Insumo</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Nuevo Producto Terminado / Pieza */}
+      {showProductModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form onSubmit={handleCreateProduct} className="bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm w-full max-w-lg space-y-3.5 text-xs shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-[#EAEAEA] text-sm">Registrar Pieza o Producto</h3>
+              </div>
+              <button type="button" onClick={() => setShowProductModal(false)} className="text-[#A0A0A0] hover:text-[#EAEAEA]">
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            {/* Toggle Destino: Venta Comercial vs Uso Interno */}
+            <div className="bg-[#101010] p-2.5 rounded-sm border border-[#2A2A2A] space-y-1.5">
+              <label className="text-[10px] text-[#A0A0A0] uppercase font-semibold tracking-wider block">
+                Destino del Producto
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewProduct({ ...newProduct, is_internal_use: false, category: 'PRODUCTO_TERMINADO' })}
+                  className={`px-3 py-2 rounded-sm text-xs font-medium flex items-center justify-center gap-2 border transition-all ${
+                    !newProduct.is_internal_use
+                      ? 'bg-emerald-950/40 text-emerald-300 border-emerald-600 font-semibold ring-1 ring-emerald-500/30'
+                      : 'bg-[#151515] text-[#888888] border-[#2A2A2A] hover:text-[#EAEAEA]'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Venta Comercial</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewProduct({ ...newProduct, is_internal_use: true, category: 'DOTACION_TALLER', sale_price_with_margin: 0 })}
+                  className={`px-3 py-2 rounded-sm text-xs font-medium flex items-center justify-center gap-2 border transition-all ${
+                    newProduct.is_internal_use
+                      ? 'bg-purple-950/50 text-purple-300 border-purple-500 font-semibold ring-1 ring-purple-500/30'
+                      : 'bg-[#151515] text-[#888888] border-[#2A2A2A] hover:text-[#EAEAEA]'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Uso Interno (Prisma Lab)</span>
+                </button>
+              </div>
+              {newProduct.is_internal_use && (
+                <p className="text-[10px] text-purple-300/80 bg-purple-950/20 border border-purple-800/30 p-1.5 rounded font-mono">
+                  ℹ Destino: Dotación de Taller / Consumo Propio. Se registra contablemente como activo/gasto operativo propio (PUC 152405 / 513505) y su precio de venta queda en $0.
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Nombre Producto / Pieza *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ej. Porta Bobinas AMS, Soporte X..."
+                  value={newProduct.name}
+                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Serial / Código (Opcional)</label>
+                <input
+                  type="text"
+                  placeholder={newProduct.is_internal_use ? "Auto (INT-...)" : "Auto (PRD-...)"}
+                  value={newProduct.serial}
+                  onChange={(e) => setNewProduct({ ...newProduct, serial: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Material</label>
+                <select
+                  value={newProduct.material_type}
+                  onChange={(e) => setNewProduct({ ...newProduct, material_type: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1.5 rounded-sm focus:border-slate-500"
+                >
+                  <option value="PETG">PETG</option>
+                  <option value="PLA">PLA</option>
+                  <option value="TPU">TPU</option>
+                  <option value="ABS">ABS</option>
+                  <option value="ASA">ASA</option>
+                  <option value="Pieza 3D">Pieza 3D</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Color</label>
+                <input
+                  type="text"
+                  placeholder="Negro, Blanco..."
+                  value={newProduct.color}
+                  onChange={(e) => setNewProduct({ ...newProduct, color: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Cantidad Unidades *</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={newProduct.current_stock_units}
+                  onChange={(e) => setNewProduct({ ...newProduct, current_stock_units: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Costo Unitario ($ COP) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  required
+                  placeholder="0"
+                  value={newProduct.unit_cost_cop}
+                  onChange={(e) => setNewProduct({ ...newProduct, unit_cost_cop: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">
+                  {newProduct.is_internal_use ? "Precio Venta ($ COP) - Deshabilitado" : "Precio Venta Con Margen ($ COP) *"}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  disabled={newProduct.is_internal_use}
+                  placeholder="0"
+                  value={newProduct.is_internal_use ? 0 : newProduct.sale_price_with_margin}
+                  onChange={(e) => setNewProduct({ ...newProduct, sale_price_with_margin: e.target.value })}
+                  className={`w-full border text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono focus:border-slate-500 ${
+                    newProduct.is_internal_use
+                      ? 'bg-[#151515] border-[#252525] text-purple-400/80 cursor-not-allowed'
+                      : 'bg-[#101010] border-[#2A2A2A]'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[#A0A0A0] mb-1">Observaciones / Notas</label>
+              <textarea
+                rows={2}
+                placeholder="Detalles sobre la pieza, ubicación en taller, etc..."
+                value={newProduct.notes}
+                onChange={(e) => setNewProduct({ ...newProduct, notes: e.target.value })}
+                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500 resize-none"
+              />
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowProductModal(false)}
+                className="flex-1 py-2 bg-[#101010] border border-[#2A2A2A] text-[#A0A0A0] hover:text-[#EAEAEA] font-medium rounded-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-sm flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Save className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <span>Guardar Pieza</span>
               </button>
             </div>
           </form>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
 from datetime import datetime
 from app.database import Base
 
@@ -35,6 +35,7 @@ class FinishedProduct(Base):
     unit_cost_cop = Column(Float, default=0.0)
     sale_price_with_margin = Column(Float, default=0.0)
     min_stock_alert = Column(Integer, default=5)
+    is_internal_use = Column(Boolean, default=False)
 
 class AdditionalSupply(Base):
     """Costos de Material Adicional: Papelería y Mantenimiento"""

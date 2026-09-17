@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -12,6 +12,7 @@ class ProductionCalculation(Base):
     project_name = Column(String, nullable=False)
     quantity = Column(Integer, default=1)
     sale_price_override = Column(Float, default=0.0)
+    is_internal_use = Column(Boolean, default=False) # True para piezas de taller / uso propio Prisma Lab
     
     # Consumo de hasta 4 filamentos
     filament1_type = Column(String, nullable=True)

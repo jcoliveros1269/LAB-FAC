@@ -38,6 +38,7 @@ class ProductionCalculationInput(BaseModel):
     discount_percentage: Optional[float] = 0.0
     discount_amount: Optional[float] = 0.0
     deduct_from_inventory: Optional[bool] = False
+    is_internal_use: Optional[bool] = False
 
 class ProductionCalculationResponse(BaseModel):
     id: Optional[int] = None
@@ -59,6 +60,7 @@ class ProductionCalculationResponse(BaseModel):
     total_project_cost: Optional[float] = 0.0
     suggested_price_margin: float
     sale_price_override: float
+    is_internal_use: Optional[bool] = False
     
     filament1_type: Optional[str] = None
     filament1_color: Optional[str] = None
