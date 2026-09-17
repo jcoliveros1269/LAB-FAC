@@ -133,12 +133,13 @@ def create_raw_material(
     total_value = (db_material.initial_stock_g or 0.0) * (db_material.cost_per_g or 0.0)
     if total_value > 0:
         entry_num = get_next_entry_number(db)
+        mat_tag = f"[{db_material.article_code}]" if db_material.article_code else f"[MAT-{db_material.id}]"
         j_debit = JournalEntry(
             entry_number=entry_num,
             entry_date=custom_date,
             puc_code="140505",
             account_name="Inventario de Materias Primas",
-            description=f"Compra Filamento {db_material.material_type} {db_material.color} ({db_material.initial_stock_g}g)",
+            description=f"Compra Filamento {db_material.material_type} {db_material.color} {mat_tag} ({db_material.initial_stock_g}g)",
             debit=round(total_value, 2),
             credit=0.0
         )
@@ -147,7 +148,7 @@ def create_raw_material(
             entry_date=custom_date,
             puc_code="110505",
             account_name="Caja General",
-            description=f"Pago Compra Filamento {db_material.material_type} {db_material.color}",
+            description=f"Pago Compra Filamento {db_material.material_type} {db_material.color} {mat_tag}",
             debit=0.0,
             credit=round(total_value, 2)
         )
@@ -216,19 +217,56 @@ def delete_raw_material(
     
     mat_code = db_material.article_code or db_material.name or "S/C"
     mat_desc = f"{db_material.material_type} {db_material.color} ({mat_code})"
+
+    # Localizar y eliminar asientos contables asociados en partida doble
+    entry_nums_to_delete = set()
+    if db_material.article_code:
+        code_entries = db.query(JournalEntry).filter(
+            JournalEntry.description.ilike(f"%{db_material.article_code}%")
+        ).all()
+        for ce in code_entries:
+            entry_nums_to_delete.add(ce.entry_number)
+
+    # Si no se halló por código, buscar en asientos históricos de inventario
+    if not entry_nums_to_delete:
+        expected_num = 24 + db_material.id
+        hist_entry = db.query(JournalEntry).filter(
+            JournalEntry.entry_number == expected_num,
+            JournalEntry.puc_code == "140505"
+        ).first()
+        if hist_entry:
+            entry_nums_to_delete.add(expected_num)
+        elif db_material.name:
+            named_entries = db.query(JournalEntry).filter(
+                JournalEntry.puc_code == "140505",
+                JournalEntry.description.ilike(f"%{db_material.name}%")
+            ).all()
+            if len(named_entries) == 1:
+                entry_nums_to_delete.add(named_entries[0].entry_number)
+
+    deleted_entries_count = 0
+    if entry_nums_to_delete:
+        deleted_entries_count = db.query(JournalEntry).filter(
+            JournalEntry.entry_number.in_(list(entry_nums_to_delete))
+        ).delete(synchronize_session=False)
+
     db.delete(db_material)
     db.commit()
 
+    audit_note = f" (se anularon {deleted_entries_count} registros contables de Asientos #{', #'.join(map(str, entry_nums_to_delete))})" if entry_nums_to_delete else ""
     log_audit_event(
         db=db,
         username=current_user.username,
         module="inventory",
         action="DELETE_MATERIAL",
-        description=f"Eliminó materia prima: {mat_desc}",
+        description=f"Eliminó materia prima: {mat_desc}{audit_note}",
         user_id=current_user.id
     )
 
-    return {"message": "Material eliminado correctamente"}
+    return {
+        "message": "Material eliminado correctamente",
+        "deleted_journal_entries": deleted_entries_count
+    }
 
 # --- PRODUCTOS TERMINADOS ---
 
@@ -247,12 +285,13 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
     total_value = (db_product.initial_stock_units or 0) * (db_product.unit_cost_cop or 0.0)
     if total_value > 0:
         entry_num = get_next_entry_number(db)
+        prod_tag = f"[{db_product.serial}]" if db_product.serial else f"[PROD-{db_product.id}]"
         j_debit = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
             puc_code="143005",
             account_name="Inventario de Productos Terminados",
-            description=f"Alta Producto Terminado: {db_product.name} ({db_product.initial_stock_units} unids)",
+            description=f"Alta Producto Terminado: {db_product.name} {prod_tag} ({db_product.initial_stock_units} unids)",
             debit=round(total_value, 2),
             credit=0.0
         )
@@ -261,7 +300,7 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
             entry_date=datetime.utcnow(),
             puc_code="613505",
             account_name="Costo de Ventas y Producción",
-            description=f"Alta Producto Terminado: {db_product.name}",
+            description=f"Alta Producto Terminado: {db_product.name} {prod_tag}",
             debit=0.0,
             credit=round(total_value, 2)
         )
@@ -282,19 +321,38 @@ def delete_finished_product(
         raise HTTPException(status_code=404, detail="Producto terminado no encontrado")
     
     prod_name = product.name
+    # Buscar asientos contables asociados al producto terminado (PUC 143005)
+    entry_nums_to_delete = set()
+    prod_entries = db.query(JournalEntry).filter(
+        JournalEntry.puc_code == "143005",
+        JournalEntry.description.ilike(f"%{prod_name}%")
+    ).all()
+    for pe in prod_entries:
+        entry_nums_to_delete.add(pe.entry_number)
+        
+    deleted_entries_count = 0
+    if entry_nums_to_delete:
+        deleted_entries_count = db.query(JournalEntry).filter(
+            JournalEntry.entry_number.in_(list(entry_nums_to_delete))
+        ).delete(synchronize_session=False)
+
     db.delete(product)
     db.commit()
 
+    audit_note = f" (se anularon {deleted_entries_count} registros contables de Asientos #{', #'.join(map(str, entry_nums_to_delete))})" if entry_nums_to_delete else ""
     log_audit_event(
         db=db,
         username=current_user.username,
         module="inventory",
         action="DELETE_PRODUCT",
-        description=f"Eliminó producto terminado: {prod_name}",
+        description=f"Eliminó producto terminado: {prod_name}{audit_note}",
         user_id=current_user.id
     )
 
-    return {"message": "Producto terminado eliminado correctamente"}
+    return {
+        "message": "Producto terminado eliminado correctamente",
+        "deleted_journal_entries": deleted_entries_count
+    }
 
 # --- MATERIAL ADICIONAL: PAPELERÍA & MANTENIMIENTO ---
 
