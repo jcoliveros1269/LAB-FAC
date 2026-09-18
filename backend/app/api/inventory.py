@@ -293,8 +293,8 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
         is_int = bool(db_product.is_internal_use)
         puc_deb = "152405" if is_int else "143005"
         acc_deb = "Herramientas y Accesorios de Taller (Uso Propio)" if is_int else "Inventario de Productos Terminados"
-        puc_cred = "513505" if is_int else "613505"
-        acc_cred = "Dotación y Mantenimiento de Taller" if is_int else "Costo de Ventas y Producción"
+        puc_cred = "513505" if is_int else "710505"
+        acc_cred = "Dotación y Mantenimiento de Taller" if is_int else "Costos de Producción - Materias Primas"
         tipo_label = "Pieza Uso Interno" if is_int else "Producto Terminado"
         
         j_debit = JournalEntry(
@@ -382,7 +382,7 @@ def sell_vitrina_product(
     )
     db.add(item)
     
-    # Asientos Contables: Débito Caja 110505, Crédito Ventas 413505
+    # Asientos Contables: Débito Caja 110505, Crédito Ventas 412005 (Ingresos - Industrias Manufactureras)
     entry_num = get_next_entry_number(db)
     j1 = JournalEntry(
         entry_number=entry_num,
@@ -396,8 +396,8 @@ def sell_vitrina_product(
     j2 = JournalEntry(
         entry_number=entry_num,
         entry_date=datetime.utcnow(),
-        puc_code="413505",
-        account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+        puc_code="412005",
+        account_name="Ingresos - Industrias Manufactureras",
         description=f"Venta Vitrina Factura {doc_number}",
         debit=0.0,
         credit=total_sale
@@ -405,20 +405,19 @@ def sell_vitrina_product(
     db.add(j1)
     db.add(j2)
     
-    # Costo de ventas: Débito 613505, Crédito 143005
+    # Costo de ventas: Débito 612005 (Costo de Ventas - Ind. Manufactureras), Crédito 143005 (Inventario de Productos Terminados)
     if cost_of_goods > 0:
-        entry_num_cogs = get_next_entry_number(db)
         j_cogs = JournalEntry(
-            entry_number=entry_num_cogs,
+            entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="613505",
-            account_name="Costo de Ventas y Producción",
+            puc_code="612005",
+            account_name="Costo de Ventas - Industrias Manufactureras",
             description=f"Costo Mercancía Vendida Vitrina: {product.name} ({quantity} unds)",
             debit=cost_of_goods,
             credit=0.0
         )
         j_inv = JournalEntry(
-            entry_number=entry_num_cogs,
+            entry_number=entry_num,
             entry_date=datetime.utcnow(),
             puc_code="143005",
             account_name="Inventario de Productos Terminados",

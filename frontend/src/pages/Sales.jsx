@@ -45,6 +45,7 @@ export default function Sales() {
   const [customers, setCustomers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [supplies, setSupplies] = useState([]);
+  const [finishedProducts, setFinishedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDocForPrint, setSelectedDocForPrint] = useState(null);
 
@@ -448,16 +449,18 @@ export default function Sales() {
   const loadSalesData = async () => {
     setLoading(true);
     try {
-      const [docsRes, custRes, matsRes, suppliesRes] = await Promise.all([
+      const [docsRes, custRes, matsRes, suppliesRes, prodsRes] = await Promise.all([
         salesService.getDocuments(),
         salesService.getCustomers(),
         inventoryService.getMaterials(),
-        inventoryService.getAdditionalSupplies().catch(() => ({ data: [] }))
+        inventoryService.getAdditionalSupplies().catch(() => ({ data: [] })),
+        inventoryService.getProducts().catch(() => ({ data: [] }))
       ]);
       setDocuments(docsRes.data || []);
       setCustomers(custRes.data || []);
       setMaterials(matsRes.data || []);
       setSupplies(suppliesRes.data || []);
+      setFinishedProducts(prodsRes.data || []);
     } catch (err) {
       console.error('Error cargando ventas:', err);
     } finally {
@@ -765,6 +768,7 @@ export default function Sales() {
     );
   });
 
+  const vitrinaProducts = (finishedProducts || []).filter(p => !p.is_internal_use && (p.current_stock_units || 0) > 0);
   const currentTotals = calculateQuoteTotals();
 
   return (
@@ -1257,9 +1261,35 @@ export default function Sales() {
                     {/* Datos de la Placa: Nombre y Cantidad */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="md:col-span-2">
-                        <label className="block text-[11px] text-[#A0A0A0] mb-1">
-                          Nombre Pieza / Placa <span className="text-slate-500">(ej: Base Soporte, Tapa, etc.)</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                          <label className="text-[11px] text-[#A0A0A0]">
+                            Nombre Pieza / Placa <span className="text-slate-500">(ej: Base Soporte, Tapa, etc.)</span>
+                          </label>
+                          {vitrinaProducts.length > 0 && !quoteForm.is_internal_use && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400">📦 De Vitrina:</span>
+                              <select
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  if (!prodId) return;
+                                  const prod = vitrinaProducts.find(vp => String(vp.id) === String(prodId));
+                                  if (prod) {
+                                    handlePlateChange(plate.id, 'name', prod.name);
+                                    e.target.value = '';
+                                  }
+                                }}
+                                className="bg-[#101010] border border-[#2A2A2A] text-emerald-400 text-[10px] rounded px-1.5 py-0.5 focus:border-slate-500 max-w-[200px] truncate"
+                              >
+                                <option value="">Cargar producto en stock...</option>
+                                {vitrinaProducts.map(vp => (
+                                  <option key={vp.id} value={vp.id}>
+                                    {vp.name} ({vp.current_stock_units} disp. - ${Number(vp.sale_price_with_margin || 0).toLocaleString('es-CO')})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
                         <input
                           type="text"
                           required
@@ -1268,6 +1298,15 @@ export default function Sales() {
                           onChange={(e) => handlePlateChange(plate.id, 'name', e.target.value)}
                           className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500 text-xs"
                         />
+                        {vitrinaProducts.find(vp => vp.name.trim().toLowerCase() === (plate.name || '').trim().toLowerCase()) && !quoteForm.is_internal_use && (
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-mono">
+                            <span>✓ Enlazado a Vitrina:</span>
+                            <strong>
+                              {vitrinaProducts.find(vp => vp.name.trim().toLowerCase() === (plate.name || '').trim().toLowerCase())?.current_stock_units} unds disponibles
+                            </strong>
+                            <span className="text-slate-400">(Al facturar se retirarán {plate.quantity || 1} unds del inventario)</span>
+                          </div>
+                        )}
                       </div>
 
                       <div>

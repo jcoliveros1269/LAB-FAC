@@ -346,6 +346,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
                 db.add(j_cred)
     else:
         # Venta Comercial:
+        # 1. Registro del Ingreso: Débito Caja 110505, Crédito Ingresos - Industrias Manufactureras 412005
         j1 = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
@@ -358,8 +359,8 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         j2 = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="413505",
-            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+            puc_code="412005",
+            account_name="Ingresos - Industrias Manufactureras",
             description=f"Venta Factura {doc.doc_number}",
             debit=0.0,
             credit=round(doc.total, 2)
@@ -367,32 +368,44 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         db.add(j1)
         db.add(j2)
 
-        # Asiento por costo de material consumido (si aplica)
-        total_mat = round(sum((it.material_cost or 0.0) for it in items), 2)
-        if total_mat <= 0:
-            total_grams = sum((it.unit_grams or 0.0) * (it.quantity or 1) for it in items)
-            if total_grams > 0:
-                total_mat = round(total_grams * 65.0, 2)
-        
-        if total_mat > 0:
-            cost_entry_num = entry_num + 1
+        # 2. Costo de Ventas y Salida de Inventario (Castigar inventario y enfrentar costo contra ingreso):
+        # Débito 612005 (Costo de Ventas - Ind. Manufactureras) y Crédito 143005 (Inventario de Productos Terminados)
+        total_cogs = sum((it.unit_cost or 0.0) * (it.quantity or 1) for it in items)
+        if total_cogs <= 0:
+            for it in items:
+                prod = db.query(FinishedProduct).filter(
+                    FinishedProduct.name.ilike(it.product_name.strip()),
+                    FinishedProduct.is_internal_use == False
+                ).first()
+                if prod and prod.unit_cost_cop and prod.unit_cost_cop > 0:
+                    total_cogs += prod.unit_cost_cop * (it.quantity or 1)
+        if total_cogs <= 0:
+            total_mat = round(sum((it.material_cost or 0.0) for it in items), 2)
+            if total_mat <= 0:
+                total_grams = sum((it.unit_grams or 0.0) * (it.quantity or 1) for it in items)
+                if total_grams > 0:
+                    total_mat = round(total_grams * 65.0, 2)
+            total_cogs = total_mat
+
+        total_cogs = round(total_cogs, 2)
+        if total_cogs > 0:
             j_cost_deb = JournalEntry(
-                entry_number=cost_entry_num,
+                entry_number=entry_num,
                 entry_date=datetime.utcnow(),
-                puc_code="613505",
-                account_name="Costo de Ventas y Producción",
-                description=f"Costo Material Factura {doc.doc_number}",
-                debit=total_mat,
+                puc_code="612005",
+                account_name="Costo de Ventas - Industrias Manufactureras",
+                description=f"Costo de Ventas Factura {doc.doc_number}",
+                debit=total_cogs,
                 credit=0.0
             )
             j_cost_cred = JournalEntry(
-                entry_number=cost_entry_num,
+                entry_number=entry_num,
                 entry_date=datetime.utcnow(),
-                puc_code="140505",
-                account_name="Inventario de Materias Primas",
-                description=f"Salida Materia Prima Factura {doc.doc_number}",
+                puc_code="143005",
+                account_name="Inventario de Productos Terminados",
+                description=f"Salida Inventario Productos Terminados Factura {doc.doc_number}",
                 debit=0.0,
-                credit=total_mat
+                credit=total_cogs
             )
             db.add(j_cost_deb)
             db.add(j_cost_cred)
@@ -445,7 +458,7 @@ def create_sales_document(
     for s_it in saved_items:
         db.refresh(s_it)
 
-    # Si nace como FACTURA / PAID: Descontar materia prima, crear producto terminado y asentar contabilidad
+    # Si nace como FACTURA / PAID: Descontar materia prima, actualizar stock de producto terminado y asentar contabilidad
     if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
         deduct_materials_for_document(db, saved_items)
 
@@ -455,36 +468,60 @@ def create_sales_document(
                 FinishedProduct.is_internal_use == is_internal
             ).first()
 
-            if existing_prod:
-                existing_prod.initial_stock_units = max(0, (existing_prod.initial_stock_units or 0) + item.quantity)
-                existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
-                if item.unit_cost and item.unit_cost > 0:
-                    existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
-                if is_internal:
+            if is_internal:
+                # USO INTERNO: Fabricar pieza para uso propio (sumar a dotación/activos internos)
+                if existing_prod:
+                    existing_prod.initial_stock_units = max(0, (existing_prod.initial_stock_units or 0) + item.quantity)
+                    existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
+                    if item.unit_cost and item.unit_cost > 0:
+                        existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
                     existing_prod.sale_price_with_margin = 0.0
                     existing_prod.is_internal_use = True
                     existing_prod.internal_accounting_target = db_doc.internal_accounting_target
-                elif item.unit_price and item.unit_price > 0:
-                    existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
-                db.add(existing_prod)
+                    db.add(existing_prod)
+                else:
+                    serial_prefix = "INT"
+                    clean_doc_num = db_doc.doc_number.replace('FAC-', '').replace('COT-', '')
+                    new_prod = FinishedProduct(
+                        serial=f"{serial_prefix}-{clean_doc_num}",
+                        name=item.product_name.strip(),
+                        color="Multicolor",
+                        material_type="Pieza 3D",
+                        initial_stock_units=max(0, item.quantity),
+                        outgoing_units=0,
+                        current_stock_units=max(0, item.quantity),
+                        unit_cost_cop=max(0.0, item.unit_cost or 0.0),
+                        sale_price_with_margin=0.0,
+                        min_stock_alert=5,
+                        is_internal_use=True,
+                        internal_accounting_target=db_doc.internal_accounting_target
+                    )
+                    db.add(new_prod)
             else:
-                serial_prefix = "INT" if is_internal else "PROD"
-                clean_doc_num = db_doc.doc_number.replace('FAC-', '').replace('COT-', '')
-                new_prod = FinishedProduct(
-                    serial=f"{serial_prefix}-{clean_doc_num}",
-                    name=item.product_name.strip(),
-                    color="Multicolor",
-                    material_type="Pieza 3D",
-                    initial_stock_units=max(0, item.quantity),
-                    outgoing_units=0,
-                    current_stock_units=max(0, item.quantity),
-                    unit_cost_cop=max(0.0, item.unit_cost or 0.0),
-                    sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
-                    min_stock_alert=5,
-                    is_internal_use=is_internal,
-                    internal_accounting_target=db_doc.internal_accounting_target
-                )
-                db.add(new_prod)
+                # VENTA COMERCIAL: Retirar unidades del inventario de vitrina
+                if existing_prod:
+                    existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) - item.quantity)
+                    existing_prod.outgoing_units = (existing_prod.outgoing_units or 0) + item.quantity
+                    if (not item.unit_cost or item.unit_cost <= 0) and existing_prod.unit_cost_cop:
+                        item.unit_cost = existing_prod.unit_cost_cop
+                    db.add(existing_prod)
+                else:
+                    # Pieza fabricada bajo pedido y despachada de inmediato al cliente (sin saldo en vitrina)
+                    clean_doc_num = db_doc.doc_number.replace('FAC-', '').replace('COT-', '')
+                    new_prod = FinishedProduct(
+                        serial=f"3D-{clean_doc_num}",
+                        name=item.product_name.strip(),
+                        color="Multicolor",
+                        material_type="Pieza 3D",
+                        initial_stock_units=max(0, item.quantity),
+                        outgoing_units=max(0, item.quantity),
+                        current_stock_units=0,
+                        unit_cost_cop=max(0.0, item.unit_cost or 0.0),
+                        sale_price_with_margin=max(0.0, item.unit_price or 0.0),
+                        min_stock_alert=5,
+                        is_internal_use=False
+                    )
+                    db.add(new_prod)
 
         create_invoice_journal_entries(db, db_doc, saved_items, is_internal)
 
@@ -528,43 +565,66 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     # 1. Descontar materia prima usada en la fabricación
     deduct_materials_for_document(db, doc_items)
 
-    # 2. Registrar en Inventario de Producto Terminado al convertir a Factura
+    # 2. Registrar retiro o entrada en Inventario de Producto Terminado al convertir a Factura
     for item in doc_items:
         existing_prod = db.query(FinishedProduct).filter(
             FinishedProduct.name.ilike(item.product_name.strip()),
             FinishedProduct.is_internal_use == is_internal
         ).first()
 
-        if existing_prod:
-            existing_prod.initial_stock_units = max(0, (existing_prod.initial_stock_units or 0) + item.quantity)
-            existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
-            if item.unit_cost and item.unit_cost > 0:
-                existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
-            if is_internal:
+        if is_internal:
+            # USO INTERNO: Sumar a stock interno
+            if existing_prod:
+                existing_prod.initial_stock_units = max(0, (existing_prod.initial_stock_units or 0) + item.quantity)
+                existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + item.quantity)
+                if item.unit_cost and item.unit_cost > 0:
+                    existing_prod.unit_cost_cop = max(0.0, item.unit_cost)
                 existing_prod.sale_price_with_margin = 0.0
                 existing_prod.is_internal_use = True
                 existing_prod.internal_accounting_target = getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
-            elif item.unit_price and item.unit_price > 0:
-                existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
-            db.add(existing_prod)
+                db.add(existing_prod)
+            else:
+                serial_prefix = "INT"
+                clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
+                new_prod = FinishedProduct(
+                    serial=f"{serial_prefix}-{clean_doc_num}",
+                    name=item.product_name.strip(),
+                    color="Multicolor",
+                    material_type="Pieza 3D",
+                    initial_stock_units=max(0, item.quantity),
+                    outgoing_units=0,
+                    current_stock_units=max(0, item.quantity),
+                    unit_cost_cop=max(0.0, item.unit_cost or 0.0),
+                    sale_price_with_margin=0.0,
+                    min_stock_alert=5,
+                    is_internal_use=True,
+                    internal_accounting_target=getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
+                )
+                db.add(new_prod)
         else:
-            serial_prefix = "INT" if is_internal else "PROD"
-            clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
-            new_prod = FinishedProduct(
-                serial=f"{serial_prefix}-{clean_doc_num}",
-                name=item.product_name.strip(),
-                color="Multicolor",
-                material_type="Pieza 3D",
-                initial_stock_units=max(0, item.quantity),
-                outgoing_units=0,
-                current_stock_units=max(0, item.quantity),
-                unit_cost_cop=max(0.0, item.unit_cost or 0.0),
-                sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
-                min_stock_alert=5,
-                is_internal_use=is_internal,
-                internal_accounting_target=getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
-            )
-            db.add(new_prod)
+            # VENTA COMERCIAL: Retirar unidades de vitrina
+            if existing_prod:
+                existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) - item.quantity)
+                existing_prod.outgoing_units = (existing_prod.outgoing_units or 0) + item.quantity
+                if (not item.unit_cost or item.unit_cost <= 0) and existing_prod.unit_cost_cop:
+                    item.unit_cost = existing_prod.unit_cost_cop
+                db.add(existing_prod)
+            else:
+                clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
+                new_prod = FinishedProduct(
+                    serial=f"3D-{clean_doc_num}",
+                    name=item.product_name.strip(),
+                    color="Multicolor",
+                    material_type="Pieza 3D",
+                    initial_stock_units=max(0, item.quantity),
+                    outgoing_units=max(0, item.quantity),
+                    current_stock_units=0,
+                    unit_cost_cop=max(0.0, item.unit_cost or 0.0),
+                    sale_price_with_margin=max(0.0, item.unit_price or 0.0),
+                    min_stock_alert=5,
+                    is_internal_use=False
+                )
+                db.add(new_prod)
 
     # 3. Generar Asientos Contables completos
     create_invoice_journal_entries(db, doc, doc_items, is_internal)
@@ -592,13 +652,19 @@ def delete_sales_document(
         restore_materials_for_document(db, doc_items)
         for item in doc_items:
             clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
-            serial_prefix = "INT" if doc.is_internal_use else "PROD"
+            serial_prefix = "INT" if doc.is_internal_use else "3D"
             target_serial = f"{serial_prefix}-{clean_doc_num}"
             prod = db.query(FinishedProduct).filter(
                 (FinishedProduct.serial == target_serial) | (FinishedProduct.name.ilike(item.product_name.strip()))
             ).first()
             if prod:
-                prod.current_stock_units = max(0, (prod.current_stock_units or 0) - item.quantity)
+                if doc.is_internal_use:
+                    # Si era de uso interno, se retira la pieza que se había sumado
+                    prod.current_stock_units = max(0, (prod.current_stock_units or 0) - item.quantity)
+                else:
+                    # Venta comercial anulada: devolver unidades al stock de vitrina
+                    prod.current_stock_units = (prod.current_stock_units or 0) + item.quantity
+                    prod.outgoing_units = max(0, (prod.outgoing_units or 0) - item.quantity)
                 db.add(prod)
     
     # Anular asientos contables asociados si era factura

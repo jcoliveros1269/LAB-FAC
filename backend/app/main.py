@@ -93,15 +93,23 @@ try:
                     conn.execute(text(f"ALTER TABLE sales_document_items ADD COLUMN {sdi_col} {sdi_type}"))
             conn.commit()
 
-        # Asegurar cuentas 152405, 513505 y 519505 en catálogo PUC
+        # Asegurar cuentas para manufactura y uso interno en catálogo PUC
         try:
-            puc_codes = [r[0] for r in conn.execute(text("SELECT code FROM puc_accounts WHERE code IN ('152405', '513505', '519505')")).fetchall()]
-            if '152405' not in puc_codes:
-                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('152405', 'Herramientas y Accesorios de Taller (Uso Propio)', 'ACTIVO')"))
-            if '513505' not in puc_codes:
-                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('513505', 'Dotación y Mantenimiento de Taller', 'GASTO')"))
-            if '519505' not in puc_codes:
-                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('519505', 'Gastos Diversos (Aseo, Cafetería, Útiles y Mantenimiento)', 'GASTO')"))
+            needed_accounts = [
+                ('143005', 'Inventario de Productos Terminados', 'ACTIVO'),
+                ('152405', 'Herramientas y Accesorios de Taller (Uso Propio)', 'ACTIVO'),
+                ('412005', 'Ingresos - Industrias Manufactureras', 'INGRESO'),
+                ('513505', 'Dotación y Mantenimiento de Taller', 'GASTO'),
+                ('519505', 'Gastos Diversos (Aseo, Cafetería, Útiles y Mantenimiento)', 'GASTO'),
+                ('612005', 'Costo de Ventas - Industrias Manufactureras', 'COSTO'),
+                ('710505', 'Costos de Producción - Materias Primas', 'COSTO'),
+                ('720505', 'Costos de Producción - Mano de Obra Directa', 'COSTO'),
+                ('730505', 'Costos de Producción - Costos Indirectos (CIF)', 'COSTO'),
+            ]
+            puc_codes = [r[0] for r in conn.execute(text("SELECT code FROM puc_accounts")).fetchall()]
+            for code, name, acc_type in needed_accounts:
+                if code not in puc_codes:
+                    conn.execute(text(f"INSERT INTO puc_accounts (code, name, account_type) VALUES ('{code}', '{name}', '{acc_type}')"))
             conn.commit()
         except Exception:
             pass
