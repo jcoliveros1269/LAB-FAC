@@ -52,6 +52,7 @@ class SalesDocumentBase(BaseModel):
     total: float = 0.0
     status: str = "DRAFT" # DRAFT, QUOTED, INVOICED, PAID, CANCELLED
     is_internal_use: Optional[bool] = False
+    internal_accounting_target: Optional[str] = "ASSET" # 'ASSET' (Activo - 152405) o 'EXPENSE' (Gasto - 519505)
 
 class SalesDocumentCreate(SalesDocumentBase):
     items: List[SalesDocumentItemCreate] = []

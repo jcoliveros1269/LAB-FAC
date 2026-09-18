@@ -66,7 +66,17 @@ try:
         cols_sd = [r[1] for r in res_sd.fetchall()]
         if cols_sd and "is_internal_use" not in cols_sd:
             conn.execute(text("ALTER TABLE sales_documents ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
-            conn.commit()
+        if cols_sd and "internal_accounting_target" not in cols_sd:
+            conn.execute(text("ALTER TABLE sales_documents ADD COLUMN internal_accounting_target TEXT DEFAULT 'ASSET'"))
+        conn.commit()
+
+        res_fp = conn.execute(text("PRAGMA table_info(finished_products)"))
+        cols_fp = [r[1] for r in res_fp.fetchall()]
+        if cols_fp and "is_internal_use" not in cols_fp:
+            conn.execute(text("ALTER TABLE finished_products ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
+        if cols_fp and "internal_accounting_target" not in cols_fp:
+            conn.execute(text("ALTER TABLE finished_products ADD COLUMN internal_accounting_target TEXT DEFAULT 'ASSET'"))
+        conn.commit()
 
         res_sdi = conn.execute(text("PRAGMA table_info(sales_document_items)"))
         cols_sdi = [r[1] for r in res_sdi.fetchall()]
@@ -83,13 +93,15 @@ try:
                     conn.execute(text(f"ALTER TABLE sales_document_items ADD COLUMN {sdi_col} {sdi_type}"))
             conn.commit()
 
-        # Asegurar cuentas 152405 y 513505 en catálogo PUC
+        # Asegurar cuentas 152405, 513505 y 519505 en catálogo PUC
         try:
-            puc_codes = [r[0] for r in conn.execute(text("SELECT code FROM puc_accounts WHERE code IN ('152405', '513505')")).fetchall()]
+            puc_codes = [r[0] for r in conn.execute(text("SELECT code FROM puc_accounts WHERE code IN ('152405', '513505', '519505')")).fetchall()]
             if '152405' not in puc_codes:
                 conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('152405', 'Herramientas y Accesorios de Taller (Uso Propio)', 'ACTIVO')"))
             if '513505' not in puc_codes:
                 conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('513505', 'Dotación y Mantenimiento de Taller', 'GASTO')"))
+            if '519505' not in puc_codes:
+                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('519505', 'Gastos Diversos (Aseo, Cafetería, Útiles y Mantenimiento)', 'GASTO')"))
             conn.commit()
         except Exception:
             pass

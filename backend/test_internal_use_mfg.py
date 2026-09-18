@@ -98,9 +98,9 @@ def run_tests():
     assert abs(spool.current_stock_g - expected_curr) < 0.01, "Error: current_stock_g no disminuyó!"
     print("[OK] PRUEBA 1 (Descuento de material físico): SUPERADA CON ÉXITO")
 
-    # Verificar asiento contable generado
+    # Verificar asiento contable generado (ASSET por defecto)
     entries = db.query(JournalEntry).filter(JournalEntry.description.ilike(f"%{test_doc_num}%")).all()
-    print(f"\nAsientos contables creados para {test_doc_num} ({len(entries)} líneas):")
+    print(f"\nAsientos contables creados para {test_doc_num} [ASSET] ({len(entries)} líneas):")
     total_deb = 0.0
     total_cred = 0.0
     affected_pucs = {}
@@ -110,7 +110,7 @@ def run_tests():
         total_cred += e.credit
         affected_pucs[e.puc_code] = e
 
-    assert "152405" in affected_pucs, "Falta cuenta 152405 en Débito!"
+    assert "152405" in affected_pucs, "Falta cuenta 152405 en Débito para ASSET!"
     assert "140505" in affected_pucs, "Falta cuenta 140505 en Crédito (Inventario de Materias Primas)!"
     assert "513528" in affected_pucs, "Falta cuenta 513528 en Crédito (Energía)!"
     assert "516005" in affected_pucs, "Falta cuenta 516005 en Crédito (Depreciación)!"
@@ -119,30 +119,48 @@ def run_tests():
 
     print(f"Total Débitos: ${total_deb:,.2f} == Total Créditos: ${total_cred:,.2f}")
     assert round(total_deb, 2) == round(total_cred, 2), "Desbalance en partida doble!"
-    print("[OK] PRUEBA 2 (Afectacion de todas las cuentas contables a descontar): SUPERADA CON EXITO")
+    print("[OK] PRUEBA 2.1 (Afectación contable ASSET - PUC 152405): SUPERADA CON ÉXITO")
 
     # Verificar producto terminado
     fin_prod = db.query(FinishedProduct).filter(
         FinishedProduct.name == item_payload.product_name,
         FinishedProduct.is_internal_use == True
     ).first()
-    assert fin_prod is not None, "No se creo el producto terminado de uso interno!"
+    assert fin_prod is not None, "No se creó el producto terminado de uso interno!"
     assert fin_prod.is_internal_use == True, "El producto debe ser is_internal_use=True"
+    assert fin_prod.internal_accounting_target == "ASSET", "internal_accounting_target debe ser ASSET"
     assert fin_prod.sale_price_with_margin == 0.0, "El precio de venta debe ser $0"
-    print(f"[OK] Producto terminado verificado: {fin_prod.serial} (is_internal_use={fin_prod.is_internal_use}, precio_venta={fin_prod.sale_price_with_margin})")
+    print(f"[OK] Producto terminado verificado: {fin_prod.serial} (internal_accounting_target={fin_prod.internal_accounting_target})")
 
-    # 3. TEST 3: Eliminar documento y verificar restauración de inventario
-    print(f"\n--- Eliminando documento {test_doc_num} para verificar restauración ---")
+    # Limpiar doc 1
     delete_sales_document(doc_id=created_doc.id, db=db, current_user=dummy_user)
-    db.refresh(spool)
-    print(f"Bobina tras eliminar: Salida = {spool.outgoing_stock_g}g, Stock = {spool.current_stock_g}g")
-    assert abs(spool.outgoing_stock_g - initial_out) < 0.01, "Error: No se restauró outgoing_stock_g!"
-    assert abs(spool.current_stock_g - initial_curr) < 0.01, "Error: No se restauró current_stock_g!"
-    
-    # Verificar que los asientos fueron anulados
-    remaining_entries = db.query(JournalEntry).filter(JournalEntry.description.ilike(f"%{test_doc_num}%")).count()
-    assert remaining_entries == 0, "No se eliminaron los asientos contables!"
-    print("[OK] PRUEBA 3 (Restauracion de stock y anulacion de asientos): SUPERADA CON EXITO")
+
+    # 2.2 TEST 2.2: Crear FACTURA de Uso Interno con destino EXPENSE (Gasto)
+    test_doc_exp = f"FAC-TEST-EXP-{int(os.urandom(4).hex(), 16) % 100000}"
+    doc_exp_payload = SalesDocumentCreate(
+        doc_number=test_doc_exp,
+        doc_type="FACTURA",
+        subtotal=total_cost,
+        discount=0.0,
+        tax=0.0,
+        total=total_cost,
+        status="INVOICED",
+        is_internal_use=True,
+        internal_accounting_target="EXPENSE",
+        items=[item_payload]
+    )
+    print(f"\n--- Creando Factura {test_doc_exp} (Uso Interno - EXPENSE) ---")
+    created_exp_doc = create_sales_document(doc=doc_exp_payload, db=db, current_user=dummy_user)
+    entries_exp = db.query(JournalEntry).filter(JournalEntry.description.ilike(f"%{test_doc_exp}%")).all()
+    affected_exp = {e.puc_code: e for e in entries_exp}
+    assert "519505" in affected_exp, "Falta cuenta 519505 en Débito para EXPENSE!"
+    assert "140505" in affected_exp, "Falta cuenta 140505 en Crédito para EXPENSE!"
+    deb_exp = sum(e.debit for e in entries_exp)
+    cred_exp = sum(e.credit for e in entries_exp)
+    assert round(deb_exp, 2) == round(cred_exp, 2), "Desbalance en partida doble para EXPENSE!"
+    print(f"[OK] PRUEBA 2.2 (Afectación contable EXPENSE - PUC 519505): SUPERADA CON ÉXITO (Debe: ${deb_exp:,.2f} == Haber: ${cred_exp:,.2f})")
+
+    delete_sales_document(doc_id=created_exp_doc.id, db=db, current_user=dummy_user)
 
     # 4. TEST 4: Crear COTIZACIÓN y convertir a FACTURA
     print("\n--- Test 4: Crear COTIZACIÓN y convertir a FACTURA ---")

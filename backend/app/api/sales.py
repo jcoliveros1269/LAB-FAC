@@ -255,13 +255,24 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
                     total_add = 0.0
                     total_mat = max(0.0, round(total_mat - rem_diff, 2))
 
-        # Asiento Débito (Activo Uso Propio)
+        # Determinar si el Débito va a ACTIVO (152405) o a GASTO (519505)
+        target = (getattr(doc, "internal_accounting_target", "ASSET") or "ASSET").upper()
+        if target == "EXPENSE":
+            puc_deb = "519505"
+            name_deb = "Gastos Diversos (Aseo, Cafetería, Útiles y Mantenimiento)"
+            desc_deb = f"Gasto / Consumo Uso Interno Factura {doc.doc_number}"
+        else:
+            puc_deb = "152405"
+            name_deb = "Herramientas y Accesorios de Taller (Uso Propio)"
+            desc_deb = f"Alta Pieza Uso Interno Factura {doc.doc_number}"
+
+        # Asiento Débito (Activo o Gasto según elección del usuario)
         j_debit = JournalEntry(
             entry_number=entry_num,
             entry_date=datetime.utcnow(),
-            puc_code="152405",
-            account_name="Herramientas y Accesorios de Taller (Uso Propio)",
-            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
+            puc_code=puc_deb,
+            account_name=name_deb,
+            description=desc_deb,
             debit=total_mfg_cost,
             credit=0.0
         )
@@ -411,7 +422,8 @@ def create_sales_document(
         tax=doc.tax,
         total=doc.total,
         status=doc.status,
-        is_internal_use=is_internal
+        is_internal_use=is_internal,
+        internal_accounting_target=getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
     )
     db.add(db_doc)
     db.commit()
@@ -451,6 +463,7 @@ def create_sales_document(
                 if is_internal:
                     existing_prod.sale_price_with_margin = 0.0
                     existing_prod.is_internal_use = True
+                    existing_prod.internal_accounting_target = db_doc.internal_accounting_target
                 elif item.unit_price and item.unit_price > 0:
                     existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
                 db.add(existing_prod)
@@ -468,7 +481,8 @@ def create_sales_document(
                     unit_cost_cop=max(0.0, item.unit_cost or 0.0),
                     sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
                     min_stock_alert=5,
-                    is_internal_use=is_internal
+                    is_internal_use=is_internal,
+                    internal_accounting_target=db_doc.internal_accounting_target
                 )
                 db.add(new_prod)
 
@@ -529,6 +543,7 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
             if is_internal:
                 existing_prod.sale_price_with_margin = 0.0
                 existing_prod.is_internal_use = True
+                existing_prod.internal_accounting_target = getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
             elif item.unit_price and item.unit_price > 0:
                 existing_prod.sale_price_with_margin = max(0.0, item.unit_price)
             db.add(existing_prod)
@@ -546,7 +561,8 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
                 unit_cost_cop=max(0.0, item.unit_cost or 0.0),
                 sale_price_with_margin=0.0 if is_internal else max(0.0, item.unit_price or 0.0),
                 min_stock_alert=5,
-                is_internal_use=is_internal
+                is_internal_use=is_internal,
+                internal_accounting_target=getattr(doc, "internal_accounting_target", "ASSET") or "ASSET"
             )
             db.add(new_prod)
 

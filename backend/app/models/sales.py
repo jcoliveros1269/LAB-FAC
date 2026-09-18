@@ -30,6 +30,7 @@ class DocumentType(Base):
     total = Column(Float, default=0.0)
     status = Column(String, default="DRAFT") # DRAFT, QUOTED, INVOICED, PAID, CANCELLED
     is_internal_use = Column(Boolean, default=False)
+    internal_accounting_target = Column(String, default="ASSET") # 'ASSET' (Activo - 152405) o 'EXPENSE' (Gasto - 519505)
 
     items = relationship("SalesDocumentItem", backref="document", cascade="all, delete-orphan", lazy="joined")
 

@@ -81,6 +81,7 @@ export default function Sales() {
     customer_id: '',
     project_name: '',
     is_internal_use: false,
+    internal_accounting_target: 'ASSET',
     plates: [
       {
         id: 1,
@@ -698,12 +699,14 @@ export default function Sales() {
       total: totals.totalPrice,
       status: docType === 'FACTURA' ? 'INVOICED' : 'QUOTED',
       is_internal_use: isInternal,
+      internal_accounting_target: quoteForm.internal_accounting_target || 'ASSET',
       items
     };
 
     try {
       const res = await salesService.createDocument(payload);
-      const internalMsg = isInternal ? ' (Enviado al apartado No a la Venta)' : '';
+      const targetLabel = (quoteForm.internal_accounting_target || 'ASSET') === 'EXPENSE' ? 'Gasto' : 'Activo';
+      const internalMsg = isInternal ? ` (Uso Interno: ${targetLabel} - No a la Venta)` : '';
       toast.success(`${docType === 'FACTURA' ? 'Factura' : 'Cotización'} ${docNumber} generada (${items.length} ${items.length === 1 ? 'ítem' : 'ítems'})${internalMsg}`);
       loadSalesData();
       if (res.data) {
@@ -720,6 +723,7 @@ export default function Sales() {
       customer_id: '',
       project_name: '',
       is_internal_use: false,
+      internal_accounting_target: 'ASSET',
       plates: [createDefaultPlate(1)],
       include_labor: true,
       labor_cost: 0,
@@ -948,8 +952,16 @@ export default function Sales() {
                               {doc.doc_type}
                             </span>
                             {doc.is_internal_use && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1" title="Orden asignada a Uso Interno (No a la venta)">
-                                <Wrench className="w-2.5 h-2.5" /> Uso Interno
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 border ${
+                                  doc.internal_accounting_target === 'EXPENSE'
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                    : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                                }`}
+                                title={`Orden asignada a Uso Interno - ${doc.internal_accounting_target === 'EXPENSE' ? 'Gasto (PUC 5195)' : 'Activo (PUC 1524)'}`}
+                              >
+                                <Wrench className="w-2.5 h-2.5" />
+                                {doc.internal_accounting_target === 'EXPENSE' ? 'Uso Interno [Gasto]' : 'Uso Interno [Activo]'}
                               </span>
                             )}
                           </div>
@@ -1107,15 +1119,62 @@ export default function Sales() {
               </div>
             </div>
 
-            {/* Aviso Informativo cuando está en modo Uso Interno */}
+            {/* Selector de Destino Contable para Uso Interno */}
             {quoteForm.is_internal_use && (
-              <div className="p-3 bg-amber-950/20 border border-amber-500/35 rounded-sm text-amber-200 text-xs flex items-center gap-2.5">
-                <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
-                <div>
-                  <strong className="text-amber-300 font-semibold">Orden asignada a Uso Interno (Prisma Lab):</strong>
-                  <p className="text-[11px] text-amber-200/80 mt-0.5">
-                    Al generar la factura, la pieza se enviará automáticamente a la sección <strong>"No a la Venta"</strong> en inventario (no saldrá en vitrina para venta) y en contabilidad se asentará estrictamente al <strong>costo de fabricación</strong> ($0 utilidad comercial).
-                  </p>
+              <div className="p-3 bg-[#13110E] border border-amber-500/40 rounded-sm text-xs space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
+                    <strong className="text-amber-300 font-semibold text-xs">Destino Contable (Uso Interno):</strong>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setQuoteForm(prev => ({ ...prev, internal_accounting_target: 'ASSET' }))}
+                      className={`px-3 py-1 rounded text-[11px] font-medium transition-all border flex items-center gap-1.5 ${
+                        (quoteForm.internal_accounting_target || 'ASSET') === 'ASSET'
+                          ? 'bg-blue-950/70 text-blue-300 border-blue-500 font-semibold shadow-sm'
+                          : 'bg-[#181818] text-[#888] border-[#2A2A2A] hover:text-[#CCC]'
+                      }`}
+                    >
+                      <span>🏢 Activo Fijo (PUC 1524)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuoteForm(prev => ({ ...prev, internal_accounting_target: 'EXPENSE' }))}
+                      className={`px-3 py-1 rounded text-[11px] font-medium transition-all border flex items-center gap-1.5 ${
+                        quoteForm.internal_accounting_target === 'EXPENSE'
+                          ? 'bg-amber-950/70 text-amber-300 border-amber-500 font-semibold shadow-sm'
+                          : 'bg-[#181818] text-[#888] border-[#2A2A2A] hover:text-[#CCC]'
+                      }`}
+                    >
+                      <span>📦 Gasto Operativo (PUC 5195)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-[11px] bg-[#0C0C0C] p-2.5 rounded border border-[#222222]">
+                  {(quoteForm.internal_accounting_target || 'ASSET') === 'ASSET' ? (
+                    <div>
+                      <span className="text-blue-300 font-semibold flex items-center gap-1.5">
+                        <span>🏢 Destino: Activo Fijo / Herramienta Propia (PUC 1524 / 1520)</span>
+                      </span>
+                      <p className="text-[#888] text-[10px] mt-0.5">
+                        Para herramientas permanentes de taller, repuestos de máquinas o accesorios capitalizables. 
+                        Asiento contable: <strong className="text-blue-400">Débito 152405</strong> (Herramientas Taller / Equipo) y <strong className="text-amber-400">Crédito 140505</strong> (Salida de Filamento de Inventario).
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                        <span>📦 Destino: Gasto Operativo / Consumo o Mantenimiento (PUC 5195 / 5135)</span>
+                      </span>
+                      <p className="text-[#888] text-[10px] mt-0.5">
+                        Para elementos descartables, útiles, aseo, cafetería, prototipos o mantenimiento rutinario. 
+                        Asiento contable: <strong className="text-rose-400">Débito 519505</strong> (Gastos Diversos / Mantenimiento) y <strong className="text-amber-400">Crédito 140505</strong> (Salida de Filamento de Inventario).
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
