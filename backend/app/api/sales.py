@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 
+import json
 from app.database import get_db
 from app.models.sales import Customer, DocumentType, SalesDocumentItem
 from app.models.accounting import JournalEntry
-from app.models.inventory import FinishedProduct
+from app.models.inventory import FinishedProduct, RawMaterial
 from app.models.auth import User
 from app.core.security import require_permission
 from app.api.auth import log_audit_event
@@ -68,6 +69,324 @@ def get_sales_documents(doc_type: str = None, db: Session = Depends(get_db)):
         query = query.filter(DocumentType.doc_type == doc_type.upper())
     return query.order_by(DocumentType.id.desc()).all()
 
+def deduct_materials_for_document(db: Session, items: List[SalesDocumentItem]):
+    """
+    Descuenta el inventario físico de materias primas (filamentos)
+    usados en la fabricación de las piezas de la factura.
+    """
+    for item in items:
+        fils = []
+        if getattr(item, "filaments_data", None):
+            try:
+                fils = json.loads(item.filaments_data)
+            except Exception:
+                fils = []
+
+        if fils:
+            for f in fils:
+                f_mat_id = f.get("material_id")
+                f_code = (f.get("article_code") or "").strip()
+                f_type = (f.get("type") or "").strip()
+                f_color = (f.get("color") or "").strip()
+                f_grams = float(f.get("grams") or 0.0)
+                if f_grams <= 0:
+                    continue
+
+                mat = None
+                if f_mat_id:
+                    try:
+                        mat = db.query(RawMaterial).filter(RawMaterial.id == int(f_mat_id)).first()
+                    except (ValueError, TypeError):
+                        pass
+
+                if not mat and f_code:
+                    mat = db.query(RawMaterial).filter(RawMaterial.article_code.ilike(f_code)).first()
+
+                if not mat and f_type:
+                    query = db.query(RawMaterial).filter(RawMaterial.material_type.ilike(f_type))
+                    if f_color:
+                        mat = query.filter(RawMaterial.color.ilike(f_color), RawMaterial.current_stock_g > 0).order_by(RawMaterial.id.desc()).first()
+                        if not mat:
+                            mat = query.filter(RawMaterial.color.ilike(f_color)).order_by(RawMaterial.id.desc()).first()
+                        if not mat:
+                            mat = query.filter(RawMaterial.color.ilike(f"%{f_color}%")).order_by(RawMaterial.id.desc()).first()
+                    if not mat:
+                        mat = query.order_by(RawMaterial.id.desc()).first()
+
+                if mat:
+                    mat.outgoing_stock_g = (mat.outgoing_stock_g or 0.0) + f_grams
+                    mat.current_stock_g = max(0.0, (mat.initial_stock_g or 0.0) - mat.outgoing_stock_g)
+                    db.add(mat)
+        else:
+            total_g = (item.unit_grams or 0.0) * (item.quantity or 1)
+            if total_g > 0:
+                mat = None
+                for t in ["PETG", "PLA", "ABS", "TPU", "NYLON", "ASA"]:
+                    if t in item.product_name.upper():
+                        mat = db.query(RawMaterial).filter(
+                            RawMaterial.material_type.ilike(t),
+                            RawMaterial.current_stock_g > 0
+                        ).first()
+                        if not mat:
+                            mat = db.query(RawMaterial).filter(RawMaterial.material_type.ilike(t)).first()
+                        break
+                if not mat:
+                    mat = db.query(RawMaterial).filter(RawMaterial.current_stock_g > 0).first()
+                if not mat:
+                    mat = db.query(RawMaterial).first()
+                if mat:
+                    mat.outgoing_stock_g = (mat.outgoing_stock_g or 0.0) + total_g
+                    mat.current_stock_g = max(0.0, (mat.initial_stock_g or 0.0) - mat.outgoing_stock_g)
+                    db.add(mat)
+
+def restore_materials_for_document(db: Session, items: List[SalesDocumentItem]):
+    """
+    Restaura el inventario físico de materia prima al anular o eliminar una factura.
+    """
+    for item in items:
+        fils = []
+        if getattr(item, "filaments_data", None):
+            try:
+                fils = json.loads(item.filaments_data)
+            except Exception:
+                fils = []
+
+        if fils:
+            for f in fils:
+                f_mat_id = f.get("material_id")
+                f_code = (f.get("article_code") or "").strip()
+                f_type = (f.get("type") or "").strip()
+                f_color = (f.get("color") or "").strip()
+                f_grams = float(f.get("grams") or 0.0)
+                if f_grams <= 0:
+                    continue
+
+                mat = None
+                if f_mat_id:
+                    try:
+                        mat = db.query(RawMaterial).filter(RawMaterial.id == int(f_mat_id)).first()
+                    except (ValueError, TypeError):
+                        pass
+
+                if not mat and f_code:
+                    mat = db.query(RawMaterial).filter(RawMaterial.article_code.ilike(f_code)).first()
+
+                if not mat and f_type:
+                    query = db.query(RawMaterial).filter(RawMaterial.material_type.ilike(f_type))
+                    if f_color:
+                        mat = query.filter(RawMaterial.color.ilike(f_color)).first()
+                    if not mat:
+                        mat = query.first()
+
+                if mat:
+                    mat.outgoing_stock_g = max(0.0, (mat.outgoing_stock_g or 0.0) - f_grams)
+                    mat.current_stock_g = max(0.0, (mat.initial_stock_g or 0.0) - mat.outgoing_stock_g)
+                    db.add(mat)
+        else:
+            total_g = (item.unit_grams or 0.0) * (item.quantity or 1)
+            if total_g > 0:
+                mat = None
+                for t in ["PETG", "PLA", "ABS", "TPU", "NYLON", "ASA"]:
+                    if t in item.product_name.upper():
+                        mat = db.query(RawMaterial).filter(RawMaterial.material_type.ilike(t)).first()
+                        break
+                if not mat:
+                    mat = db.query(RawMaterial).first()
+                if mat:
+                    mat.outgoing_stock_g = max(0.0, (mat.outgoing_stock_g or 0.0) - total_g)
+                    mat.current_stock_g = max(0.0, (mat.initial_stock_g or 0.0) - mat.outgoing_stock_g)
+                    db.add(mat)
+
+def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[SalesDocumentItem], is_internal: bool):
+    """
+    Genera los asientos contables para la factura.
+    - Si es Uso Interno:
+      Débito a 152405 (Herramientas y Accesorios de Taller - Uso Propio) por el total del costo de fabricación.
+      Crédito a todas las cuentas que componen la fabricación ("cuentas a descontar"):
+        * 140505 (Inventario de Materias Primas) por el costo de material consumido.
+        * 513528 (Servicios de Energía Eléctrica) por el costo de energía consumida.
+        * 516005 (Depreciación Maquinaria) por el desgaste de la impresora.
+        * 510506 (Sueldos y Mano de Obra) por la mano de obra aplicada.
+        * 513505 (Dotación y Mantenimiento de Taller) por costos adicionales / insumos de taller.
+      Partida doble estrictamente balanceada (Debe == Haber).
+    - Si es Venta Comercial:
+      Débito a 110505 (Caja General) y Crédito a 413505 (Ventas 3D).
+      Y si hubo costo de materiales consumido en la orden:
+      Débito a 613505 (Costo de Ventas y Producción) y Crédito a 140505 (Inventario Materias Primas).
+    """
+    next_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
+    entry_num = (next_entry.entry_number if next_entry else 0) + 1
+
+    if is_internal:
+        total_mfg_cost = sum((it.unit_cost or 0.0) * (it.quantity or 1) for it in items)
+        if total_mfg_cost <= 0:
+            total_mfg_cost = doc.total
+        total_mfg_cost = round(total_mfg_cost, 2)
+        if total_mfg_cost <= 0:
+            return
+
+        total_mat = round(sum((it.material_cost or 0.0) for it in items), 2)
+        total_energy = round(sum((it.energy_cost or 0.0) for it in items), 2)
+        total_deprec = round(sum((it.depreciation_cost or 0.0) for it in items), 2)
+        total_labor = round(sum((it.labor_cost or 0.0) for it in items), 2)
+        total_add = round(sum((it.additional_cost or 0.0) for it in items), 2)
+
+        # Si no vinieron desglosados (ej. documento previo), estimar proporcionalmente
+        if (total_mat + total_energy + total_deprec + total_labor + total_add) <= 0:
+            total_grams = sum((it.unit_grams or 0.0) * (it.quantity or 1) for it in items)
+            total_hours = sum((it.print_hours or 0.0) * (it.quantity or 1) for it in items)
+            total_mat = round(total_grams * 65.0, 2)
+            total_energy = round(total_hours * 0.15 * 763.2, 2)
+            total_deprec = round(total_hours * 678.0, 2)
+            total_labor = round((total_mat + total_energy + total_deprec) * 0.019, 2)
+            total_add = round(max(0.0, total_mfg_cost - (total_mat + total_energy + total_deprec + total_labor)), 2)
+
+        # Ajuste de diferencia para que sum(créditos) == total_mfg_cost
+        raw_credits_sum = round(total_mat + total_energy + total_deprec + total_labor + total_add, 2)
+        diff = round(total_mfg_cost - raw_credits_sum, 2)
+        if abs(diff) > 0.001:
+            if diff > 0:
+                total_add = round(total_add + diff, 2)
+            else:
+                if total_add >= abs(diff):
+                    total_add = round(total_add + diff, 2)
+                else:
+                    rem_diff = abs(diff) - total_add
+                    total_add = 0.0
+                    total_mat = max(0.0, round(total_mat - rem_diff, 2))
+
+        # Asiento Débito (Activo Uso Propio)
+        j_debit = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="152405",
+            account_name="Herramientas y Accesorios de Taller (Uso Propio)",
+            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
+            debit=total_mfg_cost,
+            credit=0.0
+        )
+        db.add(j_debit)
+
+        # Asientos Crédito (Cuentas a descontar)
+        credits_list = []
+        if total_mat > 0:
+            credits_list.append((
+                "140505",
+                "Inventario de Materias Primas",
+                f"Salida Filamento Uso Interno Factura {doc.doc_number}",
+                total_mat
+            ))
+        if total_energy > 0:
+            credits_list.append((
+                "513528",
+                "Servicios de Energía Eléctrica",
+                f"Consumo Energía Fabricación Pieza Uso Interno {doc.doc_number}",
+                total_energy
+            ))
+        if total_deprec > 0:
+            credits_list.append((
+                "516005",
+                "Depreciación Maquinaria",
+                f"Depreciación Impresora 3D Fabricación {doc.doc_number}",
+                total_deprec
+            ))
+        if total_labor > 0:
+            credits_list.append((
+                "510506",
+                "Sueldos y Mano de Obra",
+                f"Mano de Obra Taller Uso Interno {doc.doc_number}",
+                total_labor
+            ))
+        if total_add > 0:
+            credits_list.append((
+                "513505",
+                "Dotación y Mantenimiento de Taller",
+                f"Costos Indirectos Taller Uso Interno {doc.doc_number}",
+                total_add
+            ))
+
+        # Si por alguna razón la lista quedó vacía, asegurar contrapartida en 513505
+        if not credits_list:
+            credits_list.append((
+                "513505",
+                "Dotación y Mantenimiento de Taller",
+                f"Alta Pieza Uso Interno Factura {doc.doc_number}",
+                total_mfg_cost
+            ))
+
+        # Cuadre exacto al centavo
+        credit_sum = round(sum(c[3] for c in credits_list), 2)
+        final_diff = round(total_mfg_cost - credit_sum, 2)
+        if final_diff != 0 and credits_list:
+            code, name, desc, val = credits_list[-1]
+            credits_list[-1] = (code, name, desc, round(val + final_diff, 2))
+
+        for puc, name, desc, amount in credits_list:
+            if amount > 0:
+                j_cred = JournalEntry(
+                    entry_number=entry_num,
+                    entry_date=datetime.utcnow(),
+                    puc_code=puc,
+                    account_name=name,
+                    description=desc,
+                    debit=0.0,
+                    credit=amount
+                )
+                db.add(j_cred)
+    else:
+        # Venta Comercial:
+        j1 = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="110505",
+            account_name="Caja General",
+            description=f"Venta Factura {doc.doc_number}",
+            debit=round(doc.total, 2),
+            credit=0.0
+        )
+        j2 = JournalEntry(
+            entry_number=entry_num,
+            entry_date=datetime.utcnow(),
+            puc_code="413505",
+            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
+            description=f"Venta Factura {doc.doc_number}",
+            debit=0.0,
+            credit=round(doc.total, 2)
+        )
+        db.add(j1)
+        db.add(j2)
+
+        # Asiento por costo de material consumido (si aplica)
+        total_mat = round(sum((it.material_cost or 0.0) for it in items), 2)
+        if total_mat <= 0:
+            total_grams = sum((it.unit_grams or 0.0) * (it.quantity or 1) for it in items)
+            if total_grams > 0:
+                total_mat = round(total_grams * 65.0, 2)
+        
+        if total_mat > 0:
+            cost_entry_num = entry_num + 1
+            j_cost_deb = JournalEntry(
+                entry_number=cost_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="613505",
+                account_name="Costo de Ventas y Producción",
+                description=f"Costo Material Factura {doc.doc_number}",
+                debit=total_mat,
+                credit=0.0
+            )
+            j_cost_cred = JournalEntry(
+                entry_number=cost_entry_num,
+                entry_date=datetime.utcnow(),
+                puc_code="140505",
+                account_name="Inventario de Materias Primas",
+                description=f"Salida Materia Prima Factura {doc.doc_number}",
+                debit=0.0,
+                credit=total_mat
+            )
+            db.add(j_cost_deb)
+            db.add(j_cost_cred)
+
+
 @router.post("/documents", response_model=SalesDocumentResponse)
 def create_sales_document(
     doc: SalesDocumentCreate,
@@ -98,16 +417,27 @@ def create_sales_document(
     db.commit()
     db.refresh(db_doc)
 
+    saved_items = []
     for item in doc.items:
+        item_dict = item.model_dump()
+        fils = item_dict.pop("filaments", None)
+        if fils and not item_dict.get("filaments_data"):
+            item_dict["filaments_data"] = json.dumps(fils)
         db_item = SalesDocumentItem(
             document_id=db_doc.id,
-            **item.model_dump()
+            **item_dict
         )
         db.add(db_item)
+        saved_items.append(db_item)
+    db.commit()
+    for s_it in saved_items:
+        db.refresh(s_it)
 
-    # Registrar en Inventario de Producto Terminado al generar Factura Directa
+    # Si nace como FACTURA / PAID: Descontar materia prima, crear producto terminado y asentar contabilidad
     if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
-        for item in doc.items:
+        deduct_materials_for_document(db, saved_items)
+
+        for item in saved_items:
             existing_prod = db.query(FinishedProduct).filter(
                 FinishedProduct.name.ilike(item.product_name.strip()),
                 FinishedProduct.is_internal_use == is_internal
@@ -142,58 +472,7 @@ def create_sales_document(
                 )
                 db.add(new_prod)
 
-    # Auto-generar asiento contable si nace como FACTURA / PAID
-    if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
-        next_entry_num = (db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first().entry_number or 0) + 1
-        
-        if is_internal:
-            # Factura de Uso Interno: solo a costo de fabricación (152405 Débito / 513505 Crédito)
-            total_mfg_cost = sum((item.unit_cost or 0.0) * (item.quantity or 1) for item in doc.items)
-            if total_mfg_cost <= 0:
-                total_mfg_cost = db_doc.total
-            j1 = JournalEntry(
-                entry_number=next_entry_num,
-                entry_date=datetime.utcnow(),
-                puc_code="152405",
-                account_name="Herramientas y Accesorios de Taller (Uso Propio)",
-                description=f"Alta Pieza Uso Interno Factura {db_doc.doc_number}",
-                debit=round(total_mfg_cost, 2),
-                credit=0.0
-            )
-            j2 = JournalEntry(
-                entry_number=next_entry_num,
-                entry_date=datetime.utcnow(),
-                puc_code="513505",
-                account_name="Dotación y Mantenimiento de Taller",
-                description=f"Alta Pieza Uso Interno Factura {db_doc.doc_number}",
-                debit=0.0,
-                credit=round(total_mfg_cost, 2)
-            )
-            db.add(j1)
-            db.add(j2)
-        else:
-            # Asiento 1: Débito Caja
-            j1 = JournalEntry(
-                entry_number=next_entry_num,
-                entry_date=datetime.utcnow(),
-                puc_code="110505",
-                account_name="Caja General",
-                description=f"Venta Factura {db_doc.doc_number}",
-                debit=db_doc.total,
-                credit=0.0
-            )
-            # Asiento 2: Crédito Ingresos Ventas
-            j2 = JournalEntry(
-                entry_number=next_entry_num,
-                entry_date=datetime.utcnow(),
-                puc_code="413505",
-                account_name="Comercio al por Mayor y Menor (Ventas 3D)",
-                description=f"Venta Factura {db_doc.doc_number}",
-                debit=0.0,
-                credit=db_doc.total
-            )
-            db.add(j1)
-            db.add(j2)
+        create_invoice_journal_entries(db, db_doc, saved_items, is_internal)
 
     db.commit()
     db.expire_all()
@@ -230,8 +509,12 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
                 is_internal = True
     doc.is_internal_use = is_internal
 
-    # Registrar en Inventario de Producto Terminado al convertir a Factura
     doc_items = db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).all()
+    
+    # 1. Descontar materia prima usada en la fabricación
+    deduct_materials_for_document(db, doc_items)
+
+    # 2. Registrar en Inventario de Producto Terminado al convertir a Factura
     for item in doc_items:
         existing_prod = db.query(FinishedProduct).filter(
             FinishedProduct.name.ilike(item.product_name.strip()),
@@ -267,54 +550,8 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
             )
             db.add(new_prod)
 
-    # Generar Asiento Contable Automático en el Libro Diario
-    next_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
-    entry_num = (next_entry.entry_number if next_entry else 0) + 1
-
-    if is_internal:
-        total_mfg_cost = sum((item.unit_cost or 0.0) * (item.quantity or 1) for item in doc_items)
-        if total_mfg_cost <= 0:
-            total_mfg_cost = doc.total
-        j_debit = JournalEntry(
-            entry_number=entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="152405",
-            account_name="Herramientas y Accesorios de Taller (Uso Propio)",
-            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
-            debit=round(total_mfg_cost, 2),
-            credit=0.0
-        )
-        j_credit = JournalEntry(
-            entry_number=entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="513505",
-            account_name="Dotación y Mantenimiento de Taller",
-            description=f"Alta Pieza Uso Interno Factura {doc.doc_number}",
-            debit=0.0,
-            credit=round(total_mfg_cost, 2)
-        )
-    else:
-        j_debit = JournalEntry(
-            entry_number=entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="110505",
-            account_name="Caja General",
-            description=f"Recaudo por Factura {doc.doc_number}",
-            debit=doc.total,
-            credit=0.0
-        )
-        j_credit = JournalEntry(
-            entry_number=entry_num,
-            entry_date=datetime.utcnow(),
-            puc_code="413505",
-            account_name="Comercio al por Mayor y Menor (Ventas 3D)",
-            description=f"Ingreso por Venta Factura {doc.doc_number}",
-            debit=0.0,
-            credit=doc.total
-        )
-
-    db.add(j_debit)
-    db.add(j_credit)
+    # 3. Generar Asientos Contables completos
+    create_invoice_journal_entries(db, doc, doc_items, is_internal)
 
     db.commit()
     db.expire_all()
@@ -332,6 +569,21 @@ def delete_sales_document(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     doc_info = f"{doc.doc_type} #{doc.doc_number}"
+    doc_items = db.query(SalesDocumentItem).filter(SalesDocumentItem.document_id == doc.id).all()
+
+    # Si era Factura, revertir el material descontado y el stock de producto terminado
+    if doc.doc_type == "FACTURA" or doc.status in ["INVOICED", "PAID"]:
+        restore_materials_for_document(db, doc_items)
+        for item in doc_items:
+            clean_doc_num = doc.doc_number.replace('FAC-', '').replace('COT-', '')
+            serial_prefix = "INT" if doc.is_internal_use else "PROD"
+            target_serial = f"{serial_prefix}-{clean_doc_num}"
+            prod = db.query(FinishedProduct).filter(
+                (FinishedProduct.serial == target_serial) | (FinishedProduct.name.ilike(item.product_name.strip()))
+            ).first()
+            if prod:
+                prod.current_stock_units = max(0, (prod.current_stock_units or 0) - item.quantity)
+                db.add(prod)
     
     # Anular asientos contables asociados si era factura
     db.query(JournalEntry).filter(

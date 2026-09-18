@@ -576,7 +576,8 @@ export default function Sales() {
         pMatCost,
         pEnergyCost,
         pDeprecCost,
-        pDirectCost
+        pDirectCost,
+        filaments: p.filaments || []
       };
     });
 
@@ -669,7 +670,20 @@ export default function Sales() {
         print_hours: parseFloat((p.pHours / p.pQty).toFixed(2)) || 0,
         unit_cost: p.plateUnitCost,
         unit_price: p.plateUnitPrice,
-        total_price: p.plateTotalPrice
+        total_price: p.plateTotalPrice,
+        material_cost: p.pMatCost,
+        energy_cost: p.pEnergyCost,
+        depreciation_cost: p.pDeprecCost,
+        labor_cost: p.plateLaborCost,
+        additional_cost: p.plateAddCost,
+        filaments: (p.filaments || []).map(f => ({
+          material_id: f.material_id ? parseInt(f.material_id, 10) : null,
+          article_code: f.article_code || '',
+          type: f.type || 'PETG',
+          color: f.color || 'Blanco',
+          grams: parseFloat(f.grams) || 0,
+          cost: (parseFloat(f.grams) || 0) * getFilamentCost(f.type, f.color, f.material_id)
+        }))
       };
     });
 

@@ -68,6 +68,32 @@ try:
             conn.execute(text("ALTER TABLE sales_documents ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
             conn.commit()
 
+        res_sdi = conn.execute(text("PRAGMA table_info(sales_document_items)"))
+        cols_sdi = [r[1] for r in res_sdi.fetchall()]
+        if cols_sdi:
+            for sdi_col, sdi_type in [
+                ("material_cost", "REAL DEFAULT 0.0"),
+                ("energy_cost", "REAL DEFAULT 0.0"),
+                ("depreciation_cost", "REAL DEFAULT 0.0"),
+                ("labor_cost", "REAL DEFAULT 0.0"),
+                ("additional_cost", "REAL DEFAULT 0.0"),
+                ("filaments_data", "TEXT")
+            ]:
+                if sdi_col not in cols_sdi:
+                    conn.execute(text(f"ALTER TABLE sales_document_items ADD COLUMN {sdi_col} {sdi_type}"))
+            conn.commit()
+
+        # Asegurar cuentas 152405 y 513505 en catálogo PUC
+        try:
+            puc_codes = [r[0] for r in conn.execute(text("SELECT code FROM puc_accounts WHERE code IN ('152405', '513505')")).fetchall()]
+            if '152405' not in puc_codes:
+                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('152405', 'Herramientas y Accesorios de Taller (Uso Propio)', 'ACTIVO')"))
+            if '513505' not in puc_codes:
+                conn.execute(text("INSERT INTO puc_accounts (code, name, account_type) VALUES ('513505', 'Dotación y Mantenimiento de Taller', 'GASTO')"))
+            conn.commit()
+        except Exception:
+            pass
+
         # Migrar documentos y productos previos asociados a clientes de uso interno
         try:
             conn.execute(text("""

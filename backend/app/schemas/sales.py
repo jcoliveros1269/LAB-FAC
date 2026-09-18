@@ -25,6 +25,13 @@ class SalesDocumentItemBase(BaseModel):
     unit_cost: float = 0.0
     unit_price: float = 0.0
     total_price: float = 0.0
+    material_cost: Optional[float] = 0.0
+    energy_cost: Optional[float] = 0.0
+    depreciation_cost: Optional[float] = 0.0
+    labor_cost: Optional[float] = 0.0
+    additional_cost: Optional[float] = 0.0
+    filaments: Optional[List[dict]] = None
+    filaments_data: Optional[str] = None
 
 class SalesDocumentItemCreate(SalesDocumentItemBase):
     pass

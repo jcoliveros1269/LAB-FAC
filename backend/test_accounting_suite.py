@@ -14,7 +14,10 @@ from app.models.sales import DocumentType
 class TestAccountingSystemIntegrity(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from app.core.security import create_access_token
+        cls.admin_token = create_access_token({"sub": "admin", "role": "ADMIN", "name": "Admin Test"})
         cls.client = TestClient(app)
+        cls.client.headers = {"Authorization": f"Bearer {cls.admin_token}"}
 
     def test_01_create_raw_material_generates_accounting_entry(self):
         """ Test: Crear materia prima (filamento) genera asiento contable (Debe 140505 == Haber 110505) """
