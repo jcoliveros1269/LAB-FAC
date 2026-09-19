@@ -681,10 +681,9 @@ export default function Sales({ setActiveTab }) {
           }
         }
       } else if (field === 'quantity') {
-        const q = Math.max(1, parseInt(value, 10) || 1);
-        currentItem.quantity = Math.min(q, currentItem.max_stock || 9999);
+        currentItem.quantity = value;
       } else if (field === 'unit_price') {
-        currentItem.unit_price = Math.max(0, parseFloat(value) || 0);
+        currentItem.unit_price = value;
       } else {
         currentItem[field] = value;
       }
@@ -2817,14 +2816,14 @@ export default function Sales({ setActiveTab }) {
                             </td>
 
                             <td className="py-2 px-2 text-right font-mono text-[#888888] text-[11px]">
-                              ${Number(item.cost_price || 0).toLocaleString('es-CO')}
+                              ${Number(item.cost_price || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                             </td>
 
                             <td className="py-2 px-2 text-right">
                               <input
                                 type="number"
                                 min="0"
-                                step="100"
+                                step="any"
                                 value={item.unit_price}
                                 onChange={(e) => handleVitrinaItemChange(idx, 'unit_price', e.target.value)}
                                 className="w-full bg-[#101010] border border-[#2A2A2A] text-emerald-400 font-bold px-2 py-1.5 rounded-sm text-right font-mono focus:border-emerald-500 focus:outline-none"
@@ -2832,7 +2831,7 @@ export default function Sales({ setActiveTab }) {
                             </td>
 
                             <td className="py-2 px-2 text-right font-mono font-bold text-emerald-300">
-                              ${Number(subtotalLine || 0).toLocaleString('es-CO')}
+                              ${Number(subtotalLine || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                             </td>
 
                             <td className="py-2 px-1 text-center">
@@ -2870,18 +2869,18 @@ export default function Sales({ setActiveTab }) {
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
                     <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Costo Total Fab.</span>
-                    <span className="text-sm font-bold text-slate-300 font-mono">${Number(totalCost || 0).toLocaleString('es-CO')}</span>
+                    <span className="text-sm font-bold text-slate-300 font-mono">${Number(totalCost || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                   </div>
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-emerald-500/30">
                     <span className="text-[10px] text-emerald-400 block uppercase font-semibold">Total Facturado</span>
-                    <span className="text-base font-bold text-emerald-400 font-mono">${Number(totalVenta || 0).toLocaleString('es-CO')}</span>
+                    <span className="text-base font-bold text-emerald-400 font-mono">${Number(totalVenta || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                   </div>
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
                     <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Ganancia Proyectada</span>
                     <span className={`text-sm font-bold font-mono ${profit >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                      ${Number(profit || 0).toLocaleString('es-CO')}
+                      ${Number(profit || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
