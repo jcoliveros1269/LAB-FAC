@@ -6,7 +6,7 @@ import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRa
 import { predictArticleCode } from '../utils/articleCodes';
 import { useAuth } from '../context/AuthContext';
 
-export default function Inventory() {
+export default function Inventory({ setActiveTab }) {
   const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     const saved = localStorage.getItem('prisma_lab_subtab_inventory') || 'materials';
@@ -1452,9 +1452,12 @@ export default function Inventory() {
                           <div className="flex items-center justify-center gap-1.5">
                             {canEdit && (
                               <button
-                                onClick={() => handleOpenSellModal(p)}
+                                onClick={() => {
+                                  localStorage.setItem('prisma_lab_pending_vitrina_sale', JSON.stringify(p));
+                                  if (setActiveTab) setActiveTab('sales');
+                                }}
                                 disabled={!isAvailable}
-                                title={isAvailable ? "Facturar este producto de vitrina" : "Sin unidades disponibles en vitrina"}
+                                title={isAvailable ? "Facturar este producto de vitrina en Ventas" : "Sin unidades disponibles en vitrina"}
                                 className={`px-2 py-1 rounded-sm text-[10px] font-semibold flex items-center gap-1 border transition-all ${
                                   isAvailable
                                     ? 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border-emerald-500/30 cursor-pointer shadow-sm'

@@ -468,10 +468,29 @@ def create_sales_document(
         deduct_materials_for_document(db, saved_items)
 
         for item in saved_items:
+            p_name = item.product_name.strip()
             existing_prod = db.query(FinishedProduct).filter(
-                FinishedProduct.name.ilike(item.product_name.strip()),
+                FinishedProduct.name.ilike(p_name),
                 FinishedProduct.is_internal_use == is_internal
             ).first()
+
+            if not existing_prod and ("(" in p_name or "[" in p_name):
+                base_name = p_name.split("(")[0].split("[")[0].strip()
+                if base_name:
+                    existing_prod = db.query(FinishedProduct).filter(
+                        FinishedProduct.name.ilike(base_name),
+                        FinishedProduct.is_internal_use == is_internal
+                    ).first()
+
+            if not existing_prod:
+                all_prods = db.query(FinishedProduct).filter(FinishedProduct.is_internal_use == is_internal).all()
+                for fp in all_prods:
+                    if fp.serial and fp.serial in p_name:
+                        existing_prod = fp
+                        break
+                    if fp.name and fp.name.lower() in p_name.lower():
+                        existing_prod = fp
+                        break
 
             if is_internal:
                 # USO INTERNO: Fabricar pieza para uso propio (sumar a dotación/activos internos)
@@ -499,7 +518,8 @@ def create_sales_document(
                         sale_price_with_margin=0.0,
                         min_stock_alert=5,
                         is_internal_use=True,
-                        internal_accounting_target=db_doc.internal_accounting_target
+                        internal_accounting_target=db_doc.internal_accounting_target,
+                        created_at=parsed_date
                     )
                     db.add(new_prod)
             else:
@@ -524,7 +544,8 @@ def create_sales_document(
                         unit_cost_cop=max(0.0, item.unit_cost or 0.0),
                         sale_price_with_margin=max(0.0, item.unit_price or 0.0),
                         min_stock_alert=5,
-                        is_internal_use=False
+                        is_internal_use=False,
+                        created_at=parsed_date
                     )
                     db.add(new_prod)
 

@@ -24,7 +24,8 @@ import {
   Copy,
   Percent,
   Package,
-  Calendar
+  Calendar,
+  ShoppingCart
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
@@ -74,6 +75,16 @@ export default function Sales({ setActiveTab }) {
 
   // Modal Confirmar Facturación desde Cotización con Fecha
   const [convertingDoc, setConvertingDoc] = useState(null);
+
+  // Modal Facturación Multi-Producto de Vitrina
+  const [showVitrinaInvoiceModal, setShowVitrinaInvoiceModal] = useState(false);
+  const [vitrinaInvoiceForm, setVitrinaInvoiceForm] = useState({
+    customer_id: '',
+    doc_date: new Date().toISOString().split('T')[0],
+    observations: '',
+    items: []
+  });
+  const [vitrinaBillingLoading, setVitrinaBillingLoading] = useState(false);
 
   const createDefaultPlate = (num = 1) => ({
     id: Date.now() + Math.random(),
@@ -574,6 +585,180 @@ export default function Sales({ setActiveTab }) {
     }
   };
 
+  // --- Handlers Facturación Multi-Producto de Vitrina ---
+  const handleOpenVitrinaInvoiceModal = (preselectedProduct = null) => {
+    const available = (finishedProducts || []).filter(p => !p.is_internal_use && (p.current_stock_units || 0) > 0);
+    
+    let initialItems = [];
+    if (preselectedProduct) {
+      initialItems.push({
+        product_id: preselectedProduct.id,
+        name: preselectedProduct.name,
+        serial_code: preselectedProduct.serial_code || '',
+        quantity: 1,
+        unit_price: preselectedProduct.sale_price_with_margin || preselectedProduct.sale_price || 0,
+        cost_price: preselectedProduct.unit_cost_cop || preselectedProduct.unit_cost || 0,
+        max_stock: preselectedProduct.current_stock_units || 1
+      });
+    } else if (available.length > 0) {
+      const first = available[0];
+      initialItems.push({
+        product_id: first.id,
+        name: first.name,
+        serial_code: first.serial_code || '',
+        quantity: 1,
+        unit_price: first.sale_price_with_margin || first.sale_price || 0,
+        cost_price: first.unit_cost_cop || first.unit_cost || 0,
+        max_stock: first.current_stock_units || 1
+      });
+    }
+
+    setVitrinaInvoiceForm({
+      customer_id: '',
+      doc_date: new Date().toISOString().split('T')[0],
+      observations: '',
+      items: initialItems
+    });
+    setShowVitrinaInvoiceModal(true);
+  };
+
+  const handleAddVitrinaItemRow = () => {
+    const available = (finishedProducts || []).filter(p => !p.is_internal_use && (p.current_stock_units || 0) > 0);
+    if (available.length === 0) {
+      toast.warning('No hay más productos disponibles en vitrina');
+      return;
+    }
+
+    const usedIds = (vitrinaInvoiceForm.items || []).map(it => String(it.product_id));
+    let nextProd = available.find(p => !usedIds.includes(String(p.id)));
+    if (!nextProd) nextProd = available[0];
+
+    setVitrinaInvoiceForm(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          product_id: nextProd.id,
+          name: nextProd.name,
+          serial_code: nextProd.serial_code || '',
+          quantity: 1,
+          unit_price: nextProd.sale_price_with_margin || nextProd.sale_price || 0,
+          cost_price: nextProd.unit_cost_cop || nextProd.unit_cost || 0,
+          max_stock: nextProd.current_stock_units || 1
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveVitrinaItemRow = (index) => {
+    setVitrinaInvoiceForm(prev => {
+      if (prev.items.length <= 1) {
+        toast.warning('Debe haber al menos un producto en la factura');
+        return prev;
+      }
+      const updated = [...prev.items];
+      updated.splice(index, 1);
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleVitrinaItemChange = (index, field, value) => {
+    setVitrinaInvoiceForm(prev => {
+      const updated = [...prev.items];
+      const currentItem = { ...updated[index] };
+
+      if (field === 'product_id') {
+        const selectedProd = (finishedProducts || []).find(p => String(p.id) === String(value));
+        if (selectedProd) {
+          currentItem.product_id = selectedProd.id;
+          currentItem.name = selectedProd.name;
+          currentItem.serial_code = selectedProd.serial_code || '';
+          currentItem.unit_price = selectedProd.sale_price_with_margin || selectedProd.sale_price || 0;
+          currentItem.cost_price = selectedProd.unit_cost_cop || selectedProd.unit_cost || 0;
+          currentItem.max_stock = selectedProd.current_stock_units || 1;
+          if (currentItem.quantity > currentItem.max_stock) {
+            currentItem.quantity = currentItem.max_stock;
+          }
+        }
+      } else if (field === 'quantity') {
+        const q = Math.max(1, parseInt(value, 10) || 1);
+        currentItem.quantity = Math.min(q, currentItem.max_stock || 9999);
+      } else if (field === 'unit_price') {
+        currentItem.unit_price = Math.max(0, parseFloat(value) || 0);
+      } else {
+        currentItem[field] = value;
+      }
+
+      updated[index] = currentItem;
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleConfirmVitrinaInvoice = async (e) => {
+    e?.preventDefault();
+    if (!vitrinaInvoiceForm.items || vitrinaInvoiceForm.items.length === 0) {
+      toast.error('Debe seleccionar al menos un producto de vitrina');
+      return;
+    }
+
+    for (const it of vitrinaInvoiceForm.items) {
+      if (!it.product_id) {
+        toast.error('Por favor seleccione todos los productos de la lista');
+        return;
+      }
+      if (it.quantity > it.max_stock) {
+        toast.error(`La cantidad de "${it.name}" (${it.quantity}) supera las existencias en vitrina (${it.max_stock})`);
+        return;
+      }
+    }
+
+    try {
+      setVitrinaBillingLoading(true);
+      const subtotal = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * it.unit_price), 0);
+      const payload = {
+        doc_type: 'FACTURA',
+        status: 'INVOICED',
+        customer_id: vitrinaInvoiceForm.customer_id ? parseInt(vitrinaInvoiceForm.customer_id, 10) : null,
+        created_at: vitrinaInvoiceForm.doc_date ? `${vitrinaInvoiceForm.doc_date}T12:00:00` : null,
+        is_internal_use: false,
+        subtotal: subtotal,
+        discount_amount: 0,
+        total_amount: subtotal,
+        observations: vitrinaInvoiceForm.observations || 'Facturación directa de productos de Vitrina',
+        items: vitrinaInvoiceForm.items.map(it => ({
+          product_name: `${it.name}${it.serial_code ? ` [${it.serial_code}]` : ''}`,
+          quantity: parseInt(it.quantity, 10),
+          unit_price: parseFloat(it.unit_price),
+          total_price: parseInt(it.quantity, 10) * parseFloat(it.unit_price),
+          unit_cost: parseFloat(it.cost_price || 0)
+        }))
+      };
+
+      const res = await salesService.createDocument(payload);
+      toast.success(res.data?.message || 'Factura comercial de Vitrina creada exitosamente');
+      setShowVitrinaInvoiceModal(false);
+      loadSalesData();
+    } catch (err) {
+      console.error('Error al facturar vitrina:', err);
+      toast.error(err.response?.data?.detail || 'Error al facturar productos de Vitrina');
+    } finally {
+      setVitrinaBillingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem('prisma_lab_pending_vitrina_sale');
+      if (pending && finishedProducts && finishedProducts.length > 0) {
+        localStorage.removeItem('prisma_lab_pending_vitrina_sale');
+        const prod = JSON.parse(pending);
+        handleOpenVitrinaInvoiceModal(prod);
+      }
+    } catch (e) {
+      console.error('Error procesando venta pendiente de vitrina:', e);
+    }
+  }, [finishedProducts]);
+
   const handleDeleteDocument = async (id, docNumber) => {
     if (!window.confirm(`¿Estás seguro de eliminar el documento ${docNumber}? Esta acción no se puede deshacer.`)) return;
     try {
@@ -902,6 +1087,15 @@ export default function Sales({ setActiveTab }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {canEdit && (
+            <button
+              onClick={() => handleOpenVitrinaInvoiceModal()}
+              className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded-sm text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              title="Facturar productos terminados listos en el inventario de vitrina"
+            >
+              <ShoppingCart className="w-3.5 h-3.5" strokeWidth={1.5} /> Facturar Vitrina ({vitrinaProducts.length})
+            </button>
+          )}
           <button
             onClick={() => setShowCustomerModal(true)}
             className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-sm text-xs flex items-center gap-1 transition-colors"
@@ -2478,6 +2672,235 @@ export default function Sales({ setActiveTab }) {
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Facturar Ahora</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Facturación Multi-Producto de Vitrina */}
+      {showVitrinaInvoiceModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleConfirmVitrinaInvoice}
+            className="bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm w-full max-w-4xl space-y-4 text-xs shadow-2xl my-8"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-sm text-emerald-400">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#EAEAEA] text-sm">Facturar Productos de Vitrina</h3>
+                  <p className="text-[11px] text-[#A0A0A0]">
+                    Selecciona uno o varios productos disponibles en vitrina para generar la factura comercial y descontar inventario.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVitrinaInvoiceModal(false)}
+                className="text-[#A0A0A0] hover:text-[#EAEAEA] p-1 rounded-sm hover:bg-[#2A2A2A] transition-colors"
+              >
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            {/* Datos Generales (Cliente y Fecha) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#101010] p-3 rounded-sm border border-[#2A2A2A]">
+              <div>
+                <label className="block text-[#A0A0A0] font-medium mb-1">Cliente (Opcional):</label>
+                <select
+                  value={vitrinaInvoiceForm.customer_id}
+                  onChange={(e) => setVitrinaInvoiceForm({ ...vitrinaInvoiceForm, customer_id: e.target.value })}
+                  className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-emerald-500 focus:outline-none"
+                >
+                  <option value="">-- Cliente General / Venta Mostrador --</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.phone ? `(${c.phone})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] font-medium mb-1">Fecha de Facturación:</label>
+                <input
+                  type="date"
+                  required
+                  value={vitrinaInvoiceForm.doc_date}
+                  onChange={(e) => setVitrinaInvoiceForm({ ...vitrinaInvoiceForm, doc_date: e.target.value })}
+                  className="w-full bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-emerald-500 focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Tabla de Productos de Vitrina Selección Multi-Item */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[#EAEAEA] text-xs">Productos a Incluir en la Factura</span>
+                <button
+                  type="button"
+                  onClick={handleAddVitrinaItemRow}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-sm text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Agregar Otro Producto de Vitrina
+                </button>
+              </div>
+
+              {vitrinaProducts.length === 0 ? (
+                <div className="p-4 bg-amber-950/20 border border-amber-800/40 rounded-sm text-center text-amber-300 text-xs">
+                  ⚠️ No hay productos disponibles con stock en el inventario de Vitrina.
+                </div>
+              ) : (
+                <div className="border border-[#2A2A2A] rounded-sm overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px] uppercase font-semibold">
+                        <th className="py-2 px-3">Producto Vitrina</th>
+                        <th className="py-2 px-2 text-center w-24">Cantidad</th>
+                        <th className="py-2 px-2 text-right w-28">Costo Fab. (unit)</th>
+                        <th className="py-2 px-2 text-right w-32">Precio Venta (unit)</th>
+                        <th className="py-2 px-2 text-right w-32">Subtotal Venta</th>
+                        <th className="py-2 px-1 text-center w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2A2A2A] bg-[#1A1A1A]">
+                      {vitrinaInvoiceForm.items.map((item, idx) => {
+                        const subtotalLine = item.quantity * item.unit_price;
+                        return (
+                          <tr key={idx} className="hover:bg-[#222222]">
+                            <td className="py-2 px-3">
+                              <select
+                                value={item.product_id}
+                                onChange={(e) => handleVitrinaItemChange(idx, 'product_id', e.target.value)}
+                                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1.5 rounded-sm focus:border-emerald-500 focus:outline-none text-xs"
+                              >
+                                {vitrinaProducts.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} {p.serial_code ? `[${p.serial_code}]` : ''} ({p.current_stock_units} unds disponibles)
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
+                            <td className="py-2 px-2 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                max={item.max_stock || 9999}
+                                value={item.quantity}
+                                onChange={(e) => handleVitrinaItemChange(idx, 'quantity', e.target.value)}
+                                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-1.5 rounded-sm text-center font-mono focus:border-emerald-500 focus:outline-none"
+                              />
+                            </td>
+
+                            <td className="py-2 px-2 text-right font-mono text-[#888888] text-[11px]">
+                              ${Number(item.cost_price || 0).toLocaleString('es-CO')}
+                            </td>
+
+                            <td className="py-2 px-2 text-right">
+                              <input
+                                type="number"
+                                min="0"
+                                step="100"
+                                value={item.unit_price}
+                                onChange={(e) => handleVitrinaItemChange(idx, 'unit_price', e.target.value)}
+                                className="w-full bg-[#101010] border border-[#2A2A2A] text-emerald-400 font-bold px-2 py-1.5 rounded-sm text-right font-mono focus:border-emerald-500 focus:outline-none"
+                              />
+                            </td>
+
+                            <td className="py-2 px-2 text-right font-mono font-bold text-emerald-300">
+                              ${subtotalLine.toLocaleString('es-CO')}
+                            </td>
+
+                            <td className="py-2 px-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveVitrinaItemRow(idx)}
+                                disabled={vitrinaInvoiceForm.items.length <= 1}
+                                className="p-1 text-[#888888] hover:text-rose-400 disabled:opacity-30 disabled:hover:text-[#888888] rounded transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Resumen Financiero de la Factura de Vitrina */}
+            {(() => {
+              const totalUnits = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (parseInt(it.quantity, 10) || 0), 0);
+              const totalCost = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * (it.cost_price || 0)), 0);
+              const totalVenta = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * (it.unit_price || 0)), 0);
+              const profit = totalVenta - totalCost;
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-[#101010] p-3 rounded-sm border border-[#2A2A2A]">
+                  <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
+                    <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Unidades Totales</span>
+                    <span className="text-sm font-bold text-[#EAEAEA] font-mono">{totalUnits} unds</span>
+                  </div>
+
+                  <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
+                    <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Costo Total Fab.</span>
+                    <span className="text-sm font-bold text-slate-300 font-mono">${totalCost.toLocaleString('es-CO')}</span>
+                  </div>
+
+                  <div className="p-2 bg-[#1A1A1A] rounded-sm border border-emerald-500/30">
+                    <span className="text-[10px] text-emerald-400 block uppercase font-semibold">Total Facturado</span>
+                    <span className="text-base font-bold text-emerald-400 font-mono">${totalVenta.toLocaleString('es-CO')}</span>
+                  </div>
+
+                  <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
+                    <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Ganancia Proyectada</span>
+                    <span className={`text-sm font-bold font-mono ${profit >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                      ${profit.toLocaleString('es-CO')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Observaciones */}
+            <div>
+              <label className="block text-[#A0A0A0] font-medium mb-1">Observaciones / Notas:</label>
+              <textarea
+                rows="2"
+                value={vitrinaInvoiceForm.observations}
+                onChange={(e) => setVitrinaInvoiceForm({ ...vitrinaInvoiceForm, observations: e.target.value })}
+                placeholder="Detalles adicionales de la factura o cliente..."
+                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-2 rounded-sm focus:border-emerald-500 focus:outline-none resize-none"
+              ></textarea>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex gap-2 pt-2 border-t border-[#2A2A2A]">
+              <button
+                type="button"
+                onClick={() => setShowVitrinaInvoiceModal(false)}
+                className="flex-1 py-2 bg-[#101010] border border-[#2A2A2A] text-[#A0A0A0] hover:text-[#EAEAEA] font-medium rounded-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={vitrinaBillingLoading || vitrinaProducts.length === 0}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-950 disabled:text-emerald-800 text-white font-semibold rounded-sm flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              >
+                {vitrinaBillingLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                <span>{vitrinaBillingLoading ? 'Generando Factura...' : 'Generar Factura Comercial'}</span>
               </button>
             </div>
           </form>

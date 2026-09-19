@@ -92,7 +92,7 @@ function AppContent() {
       case 'production':
         return <Production setActiveTab={setActiveTab} />;
       case 'inventory':
-        return <Inventory />;
+        return <Inventory setActiveTab={setActiveTab} />;
       case 'sales':
         return <Sales setActiveTab={setActiveTab} />;
       case 'accounting':
