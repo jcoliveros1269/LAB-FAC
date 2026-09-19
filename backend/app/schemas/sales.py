@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 
 class CustomerBase(BaseModel):
@@ -46,6 +46,7 @@ class SalesDocumentBase(BaseModel):
     doc_number: str
     doc_type: str # COTIZACION, FACTURA
     customer_id: Optional[int] = None
+    created_at: Optional[Union[datetime, str]] = None
     subtotal: float = 0.0
     discount: float = 0.0
     tax: float = 0.0
@@ -56,6 +57,9 @@ class SalesDocumentBase(BaseModel):
 
 class SalesDocumentCreate(SalesDocumentBase):
     items: List[SalesDocumentItemCreate] = []
+
+class SalesDocumentDateUpdate(BaseModel):
+    created_at: Union[datetime, str]
 
 class SalesDocumentResponse(SalesDocumentBase):
     id: int

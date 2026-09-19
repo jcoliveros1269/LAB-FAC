@@ -23,7 +23,8 @@ import {
   Layers,
   Copy,
   Percent,
-  Package
+  Package,
+  Calendar
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { salesService, inventoryService, configService } from '../services/api';
@@ -67,6 +68,12 @@ export default function Sales() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editCustomerData, setEditCustomerData] = useState({ name: '', email: '', phone: '', address: '' });
 
+  // Modal Edición Fecha Documento
+  const [editingDocDate, setEditingDocDate] = useState(null);
+
+  // Modal Confirmar Facturación desde Cotización con Fecha
+  const [convertingDoc, setConvertingDoc] = useState(null);
+
   const createDefaultPlate = (num = 1) => ({
     id: Date.now() + Math.random(),
     name: `Placa ${num}`,
@@ -81,6 +88,7 @@ export default function Sales() {
   const DEFAULT_QUOTE_FORM = {
     customer_id: '',
     project_name: '',
+    doc_date: new Date().toISOString().split('T')[0],
     is_internal_use: false,
     internal_accounting_target: 'ASSET',
     plates: [
@@ -525,13 +533,43 @@ export default function Sales() {
     }
   };
 
-  const handleConvertToInvoice = async (docId, docNum) => {
+  const handleOpenConvertToInvoice = (doc) => {
+    let dStr = new Date().toISOString().split('T')[0];
+    if (doc.created_at) {
+      try {
+        dStr = new Date(doc.created_at).toISOString().split('T')[0];
+      } catch (e) {}
+    }
+    setConvertingDoc({
+      id: doc.id,
+      doc_number: doc.doc_number,
+      date: dStr
+    });
+  };
+
+  const handleConfirmConvertToInvoice = async (e) => {
+    e?.preventDefault();
+    if (!convertingDoc) return;
     try {
-      await salesService.convertToInvoice(docId);
-      toast.success(`Factura ${docNum} creada y Asiento Contable registrado`);
+      await salesService.convertToInvoice(convertingDoc.id, { created_at: convertingDoc.date });
+      toast.success(`Factura creada exitosamente y Asiento Contable registrado con fecha ${convertingDoc.date}`);
+      setConvertingDoc(null);
       loadSalesData();
     } catch (err) {
       toast.error('Error convirtiendo a factura');
+    }
+  };
+
+  const handleSaveDocDate = async (e) => {
+    e?.preventDefault();
+    if (!editingDocDate || !editingDocDate.date) return;
+    try {
+      await salesService.updateDocumentDate(editingDocDate.id, { created_at: editingDocDate.date });
+      toast.success(`Fecha de ${editingDocDate.doc_number} actualizada y contabilidad sincronizada`);
+      setEditingDocDate(null);
+      loadSalesData();
+    } catch (err) {
+      toast.error('Error al actualizar la fecha del documento');
     }
   };
 
@@ -703,6 +741,7 @@ export default function Sales() {
       status: docType === 'FACTURA' ? 'INVOICED' : 'QUOTED',
       is_internal_use: isInternal,
       internal_accounting_target: quoteForm.internal_accounting_target || 'ASSET',
+      created_at: quoteForm.doc_date || new Date().toISOString().split('T')[0],
       items
     };
 
@@ -725,6 +764,7 @@ export default function Sales() {
     const defaultForm = {
       customer_id: '',
       project_name: '',
+      doc_date: new Date().toISOString().split('T')[0],
       is_internal_use: false,
       internal_accounting_target: 'ASSET',
       plates: [createDefaultPlate(1)],
@@ -948,7 +988,32 @@ export default function Sales() {
                       <tr key={doc.id} className="hover:bg-[#222222] transition-colors">
                         <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">{doc.doc_number}</td>
                         <td className="py-2.5 px-3 font-mono text-[#A0A0A0] text-[11px] whitespace-nowrap">
-                          {formatDate(doc.created_at)}
+                          <div className="flex items-center gap-1.5 group">
+                            <span>{formatDate(doc.created_at)}</span>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  let dStr = new Date().toISOString().split('T')[0];
+                                  if (doc.created_at) {
+                                    try {
+                                      dStr = new Date(doc.created_at).toISOString().split('T')[0];
+                                    } catch (e) {}
+                                  }
+                                  setEditingDocDate({
+                                    id: doc.id,
+                                    doc_number: doc.doc_number,
+                                    doc_type: doc.doc_type,
+                                    date: dStr
+                                  });
+                                }}
+                                className="p-1 hover:bg-[#2A2A2A] text-[#666666] hover:text-emerald-400 rounded transition-colors"
+                                title={`Cambiar fecha de ${doc.doc_type.toLowerCase()} y sincronizar contabilidad`}
+                              >
+                                <Calendar className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 font-medium text-[#EAEAEA]">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1003,9 +1068,10 @@ export default function Sales() {
 
                           {doc.doc_type === 'COTIZACION' && (
                             <button
-                              onClick={() => handleConvertToInvoice(doc.id, doc.doc_number)}
-                              className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-sm text-[10px]"
+                              onClick={() => handleOpenConvertToInvoice(doc)}
+                              className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-sm text-[10px] flex items-center gap-1"
                             >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                               Facturar
                             </button>
                           )}
@@ -1112,7 +1178,19 @@ export default function Sales() {
               </div>
 
               <div className="p-3 bg-[#101010] border border-[#2A2A2A] rounded-sm space-y-2">
-                <label className="block font-semibold text-[#A0A0A0]">Nombre del Proyecto / Trabajo (General)</label>
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-[#A0A0A0]">Nombre del Proyecto / Trabajo</label>
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#A0A0A0]">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Fecha:</span>
+                    <input
+                      type="date"
+                      value={quoteForm.doc_date || new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setQuoteForm({ ...quoteForm, doc_date: e.target.value })}
+                      className="bg-[#1A1A1A] border border-[#2A2A2A] text-[#EAEAEA] px-2 py-0.5 rounded text-[11px] focus:border-emerald-500 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
                 <input
                   type="text"
                   placeholder="Ej: SOPORTE BRAZO ROBÓTICO / PROTOTIPO 3D"
@@ -2178,6 +2256,120 @@ export default function Sales() {
               >
                 <Save className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Guardar Cambios</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Cambiar Fecha de Documento */}
+      {editingDocDate && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form onSubmit={handleSaveDocDate} className="bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm w-full max-w-sm space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-[#EAEAEA]">
+                  Cambiar Fecha de {editingDocDate.doc_type === 'FACTURA' ? 'Facturación' : 'Cotización'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setEditingDocDate(null)} className="text-[#A0A0A0] hover:text-[#EAEAEA]">
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[11px] text-[#A0A0A0]">Documento:</span>
+              <div className="font-mono font-bold text-emerald-400 text-sm">
+                {editingDocDate.doc_number}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[#A0A0A0] font-medium">Nueva Fecha:</label>
+              <input
+                type="date"
+                required
+                value={editingDocDate.date}
+                onChange={(e) => setEditingDocDate({ ...editingDocDate, date: e.target.value })}
+                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-2 rounded-sm focus:border-emerald-500 focus:outline-none font-mono"
+              />
+              <p className="text-[10px] text-[#888888] leading-relaxed pt-1">
+                {editingDocDate.doc_type === 'FACTURA'
+                  ? 'ℹ️ Al guardar, los asientos contables en el Libro Diario y Balances vinculados a esta factura se actualizarán automáticamente a esta fecha.'
+                  : 'ℹ️ Se actualizará la fecha registrada de la cotización.'}
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingDocDate(null)}
+                className="flex-1 py-2 bg-[#101010] border border-[#2A2A2A] text-[#A0A0A0] hover:text-[#EAEAEA] font-medium rounded-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-sm flex items-center justify-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Guardar Fecha</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Facturar Cotización con Fecha */}
+      {convertingDoc && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form onSubmit={handleConfirmConvertToInvoice} className="bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm w-full max-w-sm space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-[#EAEAEA]">Facturar Cotización</h3>
+              </div>
+              <button type="button" onClick={() => setConvertingDoc(null)} className="text-[#A0A0A0] hover:text-[#EAEAEA]">
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[11px] text-[#A0A0A0]">Cotización a Facturar:</span>
+              <div className="font-mono font-bold text-emerald-400 text-sm">
+                {convertingDoc.doc_number}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[#A0A0A0] font-medium">Fecha de la Factura:</label>
+              <input
+                type="date"
+                required
+                value={convertingDoc.date}
+                onChange={(e) => setConvertingDoc({ ...convertingDoc, date: e.target.value })}
+                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-2 rounded-sm focus:border-emerald-500 focus:outline-none font-mono"
+              />
+              <p className="text-[10px] text-[#888888] leading-relaxed pt-1">
+                ℹ️ Se generará la factura oficial y se registrará su asiento contable con la fecha seleccionada.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConvertingDoc(null)}
+                className="flex-1 py-2 bg-[#101010] border border-[#2A2A2A] text-[#A0A0A0] hover:text-[#EAEAEA] font-medium rounded-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-sm flex items-center justify-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Facturar Ahora</span>
               </button>
             </div>
           </form>

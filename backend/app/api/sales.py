@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 import json
@@ -13,8 +13,9 @@ from app.core.security import require_permission
 from app.api.auth import log_audit_event
 from app.schemas.sales import (
     CustomerResponse, CustomerCreate,
-    SalesDocumentResponse, SalesDocumentCreate
+    SalesDocumentResponse, SalesDocumentCreate, SalesDocumentDateUpdate
 )
+from app.api.inventory import parse_entry_datetime
 
 router = APIRouter(prefix="/sales", tags=["Ventas & Cotizaciones"])
 
@@ -216,6 +217,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
     """
     next_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
     entry_num = (next_entry.entry_number if next_entry else 0) + 1
+    doc_entry_date = doc.created_at if getattr(doc, "created_at", None) else datetime.utcnow()
 
     if is_internal:
         total_mfg_cost = sum((it.unit_cost or 0.0) * (it.quantity or 1) for it in items)
@@ -269,7 +271,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         # Asiento Débito (Activo o Gasto según elección del usuario)
         j_debit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=doc_entry_date,
             puc_code=puc_deb,
             account_name=name_deb,
             description=desc_deb,
@@ -336,7 +338,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
             if amount > 0:
                 j_cred = JournalEntry(
                     entry_number=entry_num,
-                    entry_date=datetime.utcnow(),
+                    entry_date=doc_entry_date,
                     puc_code=puc,
                     account_name=name,
                     description=desc,
@@ -349,7 +351,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         # 1. Registro del Ingreso: Débito Caja 110505, Crédito Ingresos - Industrias Manufactureras 412005
         j1 = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=doc_entry_date,
             puc_code="110505",
             account_name="Caja General",
             description=f"Venta Factura {doc.doc_number}",
@@ -358,7 +360,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         )
         j2 = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=doc_entry_date,
             puc_code="412005",
             account_name="Ingresos - Industrias Manufactureras",
             description=f"Venta Factura {doc.doc_number}",
@@ -391,7 +393,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
         if total_cogs > 0:
             j_cost_deb = JournalEntry(
                 entry_number=entry_num,
-                entry_date=datetime.utcnow(),
+                entry_date=doc_entry_date,
                 puc_code="612005",
                 account_name="Costo de Ventas - Industrias Manufactureras",
                 description=f"Costo de Ventas Factura {doc.doc_number}",
@@ -400,7 +402,7 @@ def create_invoice_journal_entries(db: Session, doc: DocumentType, items: List[S
             )
             j_cost_cred = JournalEntry(
                 entry_number=entry_num,
-                entry_date=datetime.utcnow(),
+                entry_date=doc_entry_date,
                 puc_code="143005",
                 account_name="Inventario de Productos Terminados",
                 description=f"Salida Inventario Productos Terminados Factura {doc.doc_number}",
@@ -426,10 +428,12 @@ def create_sales_document(
             if any(k in c_text for k in ["uso interno", "interno", "taller", "dotacion", "dotación", "propio", "prisma lab"]):
                 is_internal = True
 
+    parsed_date = parse_entry_datetime(doc.created_at) if getattr(doc, "created_at", None) else datetime.utcnow()
     db_doc = DocumentType(
         doc_number=doc.doc_number,
         doc_type=doc.doc_type.upper(),
         customer_id=doc.customer_id,
+        created_at=parsed_date,
         subtotal=doc.subtotal,
         discount=doc.discount,
         tax=doc.tax,
@@ -541,7 +545,12 @@ def create_sales_document(
     return db_doc
 
 @router.post("/documents/{doc_id}/convert-to-invoice", response_model=SalesDocumentResponse)
-def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
+def convert_quote_to_invoice(
+    doc_id: int,
+    payload: Optional[dict] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "write"))
+):
     doc = db.query(DocumentType).filter(DocumentType.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -549,6 +558,10 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     doc.doc_type = "FACTURA"
     doc.doc_number = doc.doc_number.replace("COT-", "FAC-")
     doc.status = "INVOICED"
+
+    # Si se especificó una fecha de facturación en payload, actualizarla
+    if payload and payload.get("created_at"):
+        doc.created_at = parse_entry_datetime(payload.get("created_at"))
 
     # Determinar si es uso interno
     is_internal = bool(doc.is_internal_use)
@@ -632,6 +645,41 @@ def convert_quote_to_invoice(doc_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.expire_all()
     db.refresh(doc)
+    return doc
+
+@router.put("/documents/{doc_id}/date", response_model=SalesDocumentResponse)
+def update_document_date(
+    doc_id: int,
+    date_data: SalesDocumentDateUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "write"))
+):
+    doc = db.query(DocumentType).filter(DocumentType.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    
+    new_dt = parse_entry_datetime(date_data.created_at)
+    doc.created_at = new_dt
+
+    # Si es Factura, actualizar la fecha en todos los asientos contables asociados
+    updated_entries = 0
+    if doc.doc_type == "FACTURA" or doc.status in ["INVOICED", "PAID"]:
+        updated_entries = db.query(JournalEntry).filter(
+            JournalEntry.description.ilike(f"%{doc.doc_number}%")
+        ).update({"entry_date": new_dt}, synchronize_session=False)
+
+    db.commit()
+    db.refresh(doc)
+
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="sales",
+        action="UPDATE_DOCUMENT_DATE",
+        description=f"Cambió fecha de {doc.doc_type} #{doc.doc_number} a {new_dt.strftime('%Y-%m-%d')}" + (f" ({updated_entries} asientos actualizados)" if updated_entries else ""),
+        user_id=current_user.id
+    )
+
     return doc
 
 @router.delete("/documents/{doc_id}")

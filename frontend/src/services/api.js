@@ -82,7 +82,8 @@ export const salesService = {
   deleteCustomer: (id) => api.delete(`/sales/customers/${id}`),
   getDocuments: (docType) => api.get('/sales/documents', { params: { doc_type: docType } }),
   createDocument: (data) => api.post('/sales/documents', data),
-  convertToInvoice: (id) => api.post(`/sales/documents/${id}/convert-to-invoice`),
+  convertToInvoice: (id, payload) => api.post(`/sales/documents/${id}/convert-to-invoice`, payload),
+  updateDocumentDate: (id, data) => api.put(`/sales/documents/${id}/date`, data),
   deleteDocument: (id) => api.delete(`/sales/documents/${id}`),
 };
 
