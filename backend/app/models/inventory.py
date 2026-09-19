@@ -37,6 +37,7 @@ class FinishedProduct(Base):
     min_stock_alert = Column(Integer, default=5)
     is_internal_use = Column(Boolean, default=False)
     internal_accounting_target = Column(String, default="ASSET") # 'ASSET' (Activo - 152405) o 'EXPENSE' (Gasto - 519505)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class AdditionalSupply(Base):
     """Costos de Material Adicional: Papelería y Mantenimiento"""

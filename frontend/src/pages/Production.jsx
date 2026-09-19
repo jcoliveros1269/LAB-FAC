@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw, Package } from 'lucide-react';
+import { Calculator, History, RefreshCw, Layers, FileText, Trash2, Edit3, X, Save, Plus, Search, Filter, Percent, Zap, TrendingDown, Wrench, Box, RotateCcw, Package, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { productionService, inventoryService, salesService } from '../services/api';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
@@ -58,6 +58,7 @@ export default function Production({ setActiveTab }) {
   const DEFAULT_PROD_FORM = {
     project_code: '',
     project_name: '',
+    production_date: new Date().toISOString().split('T')[0],
     quantity: 1,
     print_hours: 1.0,
     filaments: [
@@ -339,9 +340,12 @@ export default function Production({ setActiveTab }) {
         grams: parseFloat(f.grams) || 0.0
       }));
 
+      const prodDate = formData.production_date || new Date().toISOString().split('T')[0];
       const payload = {
         project_code: formData.project_code,
         project_name: formData.project_name,
+        production_date: prodDate,
+        created_at: prodDate,
         quantity: parseInt(formData.quantity, 10) || 1,
         print_hours: parseFloat(formData.print_hours) || 1.0,
         additional_expenses: parseFloat(formData.additional_expenses) || 0.0,
@@ -470,6 +474,7 @@ export default function Production({ setActiveTab }) {
       const qty = parseInt(calcResult.quantity, 10) || 1;
       const unitCost = calcResult.total_unit_cost || 0;
 
+      const prodDate = formData.production_date || new Date().toISOString().split('T')[0];
       const productPayload = {
         name: calcResult.project_name,
         serial: `INT-${calcResult.project_code}`,
@@ -482,6 +487,8 @@ export default function Production({ setActiveTab }) {
         margin_percentage: 0.0,
         status: 'DISPONIBLE',
         is_internal_use: true,
+        entry_date: prodDate,
+        created_at: `${prodDate}T12:00:00`,
         skip_accounting: Boolean(formData.deduct_from_inventory),
         notes: `Pieza de uso interno / dotación de taller generada desde cálculo #${calcResult.project_code}`
       };
@@ -510,6 +517,7 @@ export default function Production({ setActiveTab }) {
       const qty = parseInt(calcResult.quantity, 10) || 1;
       const unitCost = calcResult.total_unit_cost || 0;
       const unitPrice = calcResult.suggested_price_margin || 0;
+      const prodDate = formData.production_date || new Date().toISOString().split('T')[0];
 
       const productPayload = {
         name: calcResult.project_name,
@@ -523,6 +531,8 @@ export default function Production({ setActiveTab }) {
         margin_percentage: calcResult.profit_margin || 0.0,
         status: 'DISPONIBLE',
         is_internal_use: false,
+        entry_date: prodDate,
+        created_at: `${prodDate}T12:00:00`,
         skip_accounting: Boolean(formData.deduct_from_inventory),
         notes: `Pieza guardada en vitrina desde cálculo #${calcResult.project_code}`
       };
@@ -571,6 +581,7 @@ export default function Production({ setActiveTab }) {
     setFormData({
       project_code: '',
       project_name: '',
+      production_date: new Date().toISOString().split('T')[0],
       quantity: 1,
       print_hours: 1.0,
       filaments: [
@@ -680,7 +691,7 @@ export default function Production({ setActiveTab }) {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1 flex items-center justify-between">
                   <span>Código Proyecto</span>
@@ -695,7 +706,24 @@ export default function Production({ setActiveTab }) {
               </div>
 
               <div>
-                <label className="block text-[#A0A0A0] mb-1">Nombre Pieza / Proyecto</label>
+                <label className="block text-[#A0A0A0] mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Fecha Producción *</span>
+                  </span>
+                  <span className="text-[10px] text-amber-400 font-mono">Afecta Asiento</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formData.production_date || new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setFormData({ ...formData, production_date: e.target.value })}
+                  className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-amber-500 font-mono text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#A0A0A0] mb-1">Nombre Pieza / Proyecto *</label>
                 <input
                   type="text"
                   required
@@ -705,7 +733,9 @@ export default function Production({ setActiveTab }) {
                   className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm focus:border-slate-500"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
               <div>
                 <label className="block text-[#A0A0A0] mb-1">Cantidad Unidades</label>
                 <input

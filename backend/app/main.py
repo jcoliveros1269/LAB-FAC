@@ -76,6 +76,9 @@ try:
             conn.execute(text("ALTER TABLE finished_products ADD COLUMN is_internal_use BOOLEAN DEFAULT 0"))
         if cols_fp and "internal_accounting_target" not in cols_fp:
             conn.execute(text("ALTER TABLE finished_products ADD COLUMN internal_accounting_target TEXT DEFAULT 'ASSET'"))
+        if cols_fp and "created_at" not in cols_fp:
+            conn.execute(text("ALTER TABLE finished_products ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE finished_products SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
         conn.commit()
 
         res_sdi = conn.execute(text("PRAGMA table_info(sales_document_items)"))

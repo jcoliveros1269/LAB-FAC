@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Union, List
 from datetime import datetime
 
 class FilamentUsage(BaseModel):
@@ -13,6 +13,8 @@ class ProductionCalculationInput(BaseModel):
     project_name: str
     quantity: int = 1
     print_hours: float
+    created_at: Optional[Union[datetime, str]] = None
+    production_date: Optional[Union[datetime, str]] = None
     
     # Lista de hasta 4 filamentos o campos específicos
     filaments: Optional[list[FilamentUsage]] = None

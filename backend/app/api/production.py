@@ -12,6 +12,7 @@ from app.schemas.production import (
     ProductionCalculationInput,
     ProductionCalculationResponse
 )
+from app.api.inventory import parse_entry_datetime
 
 def get_next_entry_number(db: Session) -> int:
     last_entry = db.query(JournalEntry).order_by(JournalEntry.entry_number.desc()).first()
@@ -173,11 +174,15 @@ def calculate_3d_production(
     else:
         final_price = calc_input.sale_price_override if (calc_input.sale_price_override and calc_input.sale_price_override > 0) else suggested_price
 
+    raw_date = calc_input.production_date or calc_input.created_at
+    calc_date = parse_entry_datetime(raw_date) if raw_date else datetime.utcnow()
+
     db_calc = ProductionCalculation(
         project_code=project_code,
         project_name=calc_input.project_name,
         quantity=calc_input.quantity,
         print_hours=calc_input.print_hours,
+        created_at=calc_date,
         total_grams=total_grams,
         material_cost=material_cost,
         energy_cost=energy_cost,
@@ -219,7 +224,7 @@ def calculate_3d_production(
         
         j_debit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=calc_date,
             puc_code=puc_deb,
             account_name=acc_deb,
             description=f"Consumo Filamento {prefix_desc} #{project_code} ({calc_input.project_name})",
@@ -228,7 +233,7 @@ def calculate_3d_production(
         )
         j_credit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=calc_date,
             puc_code="140505",
             account_name="Inventario de Materias Primas / Filamentos",
             description=f"Salida Filamento {prefix_desc} #{project_code}",

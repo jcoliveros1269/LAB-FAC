@@ -137,10 +137,15 @@ export default function Inventory() {
     sale_price_with_margin: 0,
     status: 'DISPONIBLE',
     is_internal_use: false,
+    entry_date: getTodayYMD(),
     notes: ''
   };
   const [showProductModal, setShowProductModal] = useState(false);
   const [newProduct, setNewProduct] = useState(DEFAULT_NEW_PRODUCT);
+
+  // Modal para cambiar fecha de Producto Terminado / Pieza y sincronizar contabilidad
+  const [editingProductDate, setEditingProductDate] = useState(null);
+  const [newProductDateVal, setNewProductDateVal] = useState(getTodayYMD());
 
   const loadInventory = async () => {
     setLoading(true);
@@ -328,6 +333,7 @@ export default function Inventory() {
     try {
       setLoading(true);
       const isInternal = !!newProduct.is_internal_use;
+      const finalDate = normalizeDateInput(newProduct.entry_date);
       const payload = {
         name: newProduct.name.trim(),
         serial: newProduct.serial ? newProduct.serial.trim() : (isInternal ? `INT-${Date.now().toString().slice(-6)}` : `PRD-${Date.now().toString().slice(-6)}`),
@@ -339,10 +345,12 @@ export default function Inventory() {
         sale_price_with_margin: isInternal ? 0.0 : (parseFloat(newProduct.sale_price_with_margin) || 0.0),
         status: 'DISPONIBLE',
         is_internal_use: isInternal,
+        entry_date: finalDate,
+        created_at: `${finalDate}T12:00:00`,
         notes: newProduct.notes || (isInternal ? 'Pieza registrada para dotación / uso interno del taller' : '')
       };
       await inventoryService.createProduct(payload);
-      toast.success(isInternal ? `Pieza '${payload.name}' registrada en Apartado No a la Venta` : `Producto '${payload.name}' registrado en Vitrina`);
+      toast.success(isInternal ? `Pieza '${payload.name}' registrada en Apartado No a la Venta (${formatDate(finalDate)})` : `Producto '${payload.name}' registrado en Vitrina (${formatDate(finalDate)})`);
       setShowProductModal(false);
       setNewProduct(DEFAULT_NEW_PRODUCT);
       if (isInternal) {
@@ -365,6 +373,7 @@ export default function Inventory() {
       quantity: 1,
       unit_price: product.sale_price_with_margin || 0,
       customer_id: '',
+      sale_date: getTodayYMD(),
       notes: `Venta vitrina: ${product.name}`
     });
     setShowSellModal(true);
@@ -381,10 +390,13 @@ export default function Inventory() {
     if (!sellProductData) return;
     try {
       setSellingLoading(true);
+      const finalDate = normalizeDateInput(sellForm.sale_date);
       const res = await inventoryService.sellProduct(sellProductData.id, {
         quantity: parseInt(sellForm.quantity, 10),
         unit_price: parseFloat(sellForm.unit_price),
         customer_id: sellForm.customer_id ? parseInt(sellForm.customer_id, 10) : null,
+        date: finalDate,
+        created_at: `${finalDate}T12:00:00`,
         notes: sellForm.notes
       });
       toast.success(res.data?.message || 'Producto facturado y stock descontado exitosamente');
@@ -395,6 +407,31 @@ export default function Inventory() {
       toast.error(err.response?.data?.detail || 'Error al facturar producto de vitrina');
     } finally {
       setSellingLoading(false);
+    }
+  };
+
+  const handleOpenEditProductDate = (product) => {
+    setEditingProductDate(product);
+    setNewProductDateVal(normalizeDateInput(product.created_at || getTodayYMD()));
+  };
+
+  const handleSaveProductDate = async (e) => {
+    e.preventDefault();
+    if (!editingProductDate) return;
+    try {
+      setLoading(true);
+      const finalDate = normalizeDateInput(newProductDateVal);
+      await inventoryService.updateProductDate(editingProductDate.id, {
+        created_at: `${finalDate}T12:00:00`
+      });
+      toast.success(`Fecha de '${editingProductDate.name}' actualizada a ${formatDate(finalDate)} (Asientos sincronizados)`);
+      setEditingProductDate(null);
+      loadInventory();
+    } catch (err) {
+      console.error('Error actualizando fecha:', err);
+      toast.error(err.response?.data?.detail || 'Error actualizando fecha del producto');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1333,6 +1370,7 @@ export default function Inventory() {
                   <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
                     <th className="py-2 px-2 font-semibold">Serial</th>
                     <th className="py-2 px-2 font-semibold">Producto Vitrina</th>
+                    <th className="py-2 px-1.5 font-semibold">Fecha</th>
                     <th className="py-2 px-1.5 font-semibold">Color</th>
                     <th className="py-2 px-1.5 font-semibold">Tipo</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Stock</th>
@@ -1362,6 +1400,20 @@ export default function Inventory() {
                             <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 font-mono" title="A la venta en vitrina">
                               VITRINA
                             </span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-1.5 text-[#A0A0A0] font-mono text-[10px] whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <span>{formatDate(p.created_at)}</span>
+                            {canEdit && (
+                              <button
+                                onClick={() => handleOpenEditProductDate(p)}
+                                title="Modificar fecha de fabricación y sincronizar contabilidad"
+                                className="p-0.5 hover:bg-[#2A2A2A] text-[#777777] hover:text-emerald-400 rounded transition-colors"
+                              >
+                                <Calendar className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="py-2 px-1.5 text-[#A0A0A0] break-words">{p.color || 'Multicolor'}</td>
@@ -1470,6 +1522,7 @@ export default function Inventory() {
                   <tr className="bg-[#101010] border-b border-[#2A2A2A] text-[#A0A0A0] text-[10px]">
                     <th className="py-2 px-2 font-semibold">Serial</th>
                     <th className="py-2 px-2 font-semibold">Pieza / Herramienta</th>
+                    <th className="py-2 px-1.5 font-semibold">Fecha</th>
                     <th className="py-2 px-1.5 font-semibold">Color</th>
                     <th className="py-2 px-1.5 font-semibold">Material</th>
                     <th className="py-2 px-1.5 font-semibold text-right">Stock Taller</th>
@@ -1497,6 +1550,20 @@ export default function Inventory() {
                             <span className="px-1.5 py-0.2 rounded text-[9px] bg-purple-950/70 text-purple-300 border border-purple-800/70 font-mono font-semibold" title="Dotación y Consumo Interno de Taller">
                               USO INTERNO
                             </span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-1.5 text-purple-300/80 font-mono text-[10px] whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <span>{formatDate(p.created_at)}</span>
+                            {canEdit && (
+                              <button
+                                onClick={() => handleOpenEditProductDate(p)}
+                                title="Modificar fecha de la pieza y sincronizar contabilidad"
+                                className="p-0.5 hover:bg-[#2A2A2A] text-[#777777] hover:text-purple-400 rounded transition-colors"
+                              >
+                                <Calendar className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="py-2 px-1.5 text-[#A0A0A0] break-words">{p.color || 'Multicolor'}</td>
@@ -1914,6 +1981,29 @@ export default function Inventory() {
                   ℹ Destino: Dotación de Taller / Consumo Propio. Se registra contablemente como activo/gasto operativo propio (PUC 152405 / 513505) y su precio de venta queda en $0.
                 </p>
               )}
+            </div>
+
+            {/* Fecha de Registro / Fabricación */}
+            <div className="bg-[#101010] p-2.5 rounded-sm border border-[#2A2A2A] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <div className="flex-1 w-full sm:w-auto">
+                <label className="block text-[#A0A0A0] text-[11px] mb-1 flex items-center justify-between">
+                  <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Fecha de Fabricación / Registro *</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono">Afecta Asiento Contable</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={normalizeDateInput(newProduct.entry_date)}
+                  onChange={(e) => setNewProduct({ ...newProduct, entry_date: e.target.value })}
+                  className="w-full bg-[#151515] border border-[#333333] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-emerald-500"
+                />
+              </div>
+              <div className="text-[11px] text-[#A0A0A0] font-mono sm:self-end sm:pb-1">
+                Fecha visible: <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newProduct.entry_date))}</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2607,6 +2697,26 @@ export default function Inventory() {
               </select>
             </div>
 
+            <div className="bg-[#101010] p-2.5 rounded-sm border border-[#2A2A2A] space-y-1">
+              <label className="block text-[#A0A0A0] text-[11px] mb-1 flex items-center justify-between">
+                <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Fecha de Facturación y Salida *</span>
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono">Afecta Asientos Contables</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={normalizeDateInput(sellForm.sale_date)}
+                onChange={(e) => setSellForm({ ...sellForm, sale_date: e.target.value })}
+                className="w-full bg-[#151515] border border-[#333333] text-[#EAEAEA] px-2.5 py-1.5 rounded-sm font-mono text-xs focus:border-emerald-500"
+              />
+              <div className="text-[10px] text-[#888888] font-mono">
+                Fecha de asiento: <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(sellForm.sale_date))}</span>
+              </div>
+            </div>
+
             <div>
               <label className="block text-[#A0A0A0] mb-1 font-medium">Observaciones de Facturación</label>
               <input
@@ -2642,6 +2752,61 @@ export default function Inventory() {
               >
                 <ShoppingCart className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>{sellingLoading ? 'Facturando...' : 'Generar Factura'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Modificar Fecha de Producto y Sincronizar Contabilidad */}
+      {editingProductDate && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form onSubmit={handleSaveProductDate} className="bg-[#1A1A1A] border border-[#2A2A2A] p-5 rounded-sm w-full max-w-sm space-y-4 text-xs shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-[#EAEAEA] text-sm">Modificar Fecha</h3>
+              </div>
+              <button type="button" onClick={() => setEditingProductDate(null)} className="text-[#A0A0A0] hover:text-[#EAEAEA]">
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div className="bg-[#101010] p-2.5 rounded-sm border border-[#2A2A2A] space-y-1">
+              <div className="text-xs font-semibold text-[#EAEAEA]">{editingProductDate.name}</div>
+              <div className="text-[10px] font-mono text-emerald-400">{editingProductDate.serial || 'Sin serial'}</div>
+              <p className="text-[10px] text-[#888888] pt-1 leading-relaxed">
+                Al cambiar la fecha, los registros contables del Libro Diario vinculados a esta pieza se actualizarán automáticamente a la misma fecha.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[#A0A0A0] mb-1 font-medium">Nueva Fecha *</label>
+              <input
+                type="date"
+                required
+                value={normalizeDateInput(newProductDateVal)}
+                onChange={(e) => setNewProductDateVal(e.target.value)}
+                className="w-full bg-[#101010] border border-[#2A2A2A] text-[#EAEAEA] px-3 py-1.5 rounded-sm font-mono focus:border-emerald-500 text-sm"
+              />
+              <div className="text-[10px] text-[#888888] mt-1 font-mono">
+                Fecha visible: <span className="text-emerald-400 font-semibold">{formatDate(normalizeDateInput(newProductDateVal))}</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingProductDate(null)}
+                className="flex-1 py-2 bg-[#101010] border border-[#2A2A2A] text-[#A0A0A0] hover:text-[#EAEAEA] font-medium rounded-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-sm transition-colors"
+              >
+                Guardar y Sincronizar
               </button>
             </div>
           </form>

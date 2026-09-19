@@ -13,7 +13,7 @@ from app.api.auth import log_audit_event
 from app.utils import generate_article_code
 from app.schemas.inventory import (
     RawMaterialResponse, RawMaterialCreate, RawMaterialUpdate,
-    FinishedProductResponse, FinishedProductCreate,
+    FinishedProductResponse, FinishedProductCreate, FinishedProductDateUpdate,
     AdditionalSupplyResponse, AdditionalSupplyCreate, AdditionalSupplyUpdate
 )
 
@@ -279,36 +279,59 @@ def get_finished_products(db: Session = Depends(get_db)):
 def create_finished_product(product: FinishedProductCreate, db: Session = Depends(get_db)):
     prod_data = product.model_dump()
     skip_acc = prod_data.pop("skip_accounting", False)
+    
+    # Manejar fecha personalizada
+    raw_date = prod_data.pop("entry_date", None) or prod_data.get("created_at")
+    entry_dt = parse_entry_datetime(raw_date) if raw_date else datetime.utcnow()
+    prod_data["created_at"] = entry_dt
+
     db_product = FinishedProduct(**prod_data)
+    if not db_product.initial_stock_units and db_product.current_stock_units:
+        db_product.initial_stock_units = db_product.current_stock_units
+
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
 
     # Registro de Asiento Contable Automático (Partida Doble)
-    total_value = (db_product.initial_stock_units or 0) * (db_product.unit_cost_cop or 0.0)
+    total_units = (db_product.initial_stock_units or db_product.current_stock_units or 0)
+    total_value = total_units * (db_product.unit_cost_cop or 0.0)
     if not skip_acc and total_value > 0:
         entry_num = get_next_entry_number(db)
         prod_tag = f"[{db_product.serial}]" if db_product.serial else f"[PROD-{db_product.id}]"
         
         is_int = bool(db_product.is_internal_use)
-        puc_deb = "152405" if is_int else "143005"
-        acc_deb = "Herramientas y Accesorios de Taller (Uso Propio)" if is_int else "Inventario de Productos Terminados"
-        puc_cred = "513505" if is_int else "710505"
-        acc_cred = "Dotación y Mantenimiento de Taller" if is_int else "Costos de Producción - Materias Primas"
-        tipo_label = "Pieza Uso Interno" if is_int else "Producto Terminado"
+        is_expense = (getattr(db_product, "internal_accounting_target", "ASSET") == "EXPENSE")
+        
+        if is_int:
+            if is_expense:
+                puc_deb = "519505"
+                acc_deb = "Gastos de Dotación y Mantenimiento de Taller"
+            else:
+                puc_deb = "152405"
+                acc_deb = "Herramientas y Accesorios de Taller (Uso Propio)"
+            puc_cred = "513505"
+            acc_cred = "Dotación y Mantenimiento de Taller"
+            tipo_label = "Pieza Uso Interno"
+        else:
+            puc_deb = "143005"
+            acc_deb = "Inventario de Productos Terminados"
+            puc_cred = "710505"
+            acc_cred = "Costos de Producción - Materias Primas"
+            tipo_label = "Producto Terminado"
         
         j_debit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=entry_dt,
             puc_code=puc_deb,
             account_name=acc_deb,
-            description=f"Alta {tipo_label}: {db_product.name} {prod_tag} ({db_product.initial_stock_units} unids)",
+            description=f"Alta {tipo_label}: {db_product.name} {prod_tag} ({total_units} unids)",
             debit=round(total_value, 2),
             credit=0.0
         )
         j_credit = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=entry_dt,
             puc_code=puc_cred,
             account_name=acc_cred,
             description=f"Alta {tipo_label}: {db_product.name} {prod_tag}",
@@ -320,6 +343,46 @@ def create_finished_product(product: FinishedProductCreate, db: Session = Depend
         db.commit()
 
     return db_product
+
+@router.put("/products/{product_id}/date")
+def update_product_date(
+    product_id: int,
+    payload: FinishedProductDateUpdate,
+    db: Session = Depends(get_db)
+):
+    product = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    new_dt = parse_entry_datetime(payload.created_at)
+    product.created_at = new_dt
+    
+    # Sincronizar en asientos contables asociados
+    synced_entries = 0
+    search_terms = []
+    if product.serial:
+        search_terms.append(product.serial)
+    if product.name:
+        search_terms.append(product.name)
+    
+    for term in search_terms:
+        entries = db.query(JournalEntry).filter(
+            JournalEntry.puc_code.in_(["143005", "152405", "519505", "513505", "710505"]),
+            JournalEntry.description.ilike(f"%{term}%")
+        ).all()
+        for e in entries:
+            e.entry_date = new_dt
+            synced_entries += 1
+            
+    db.commit()
+    db.refresh(product)
+    
+    return {
+        "message": f"Fecha actualizada a {new_dt.strftime('%d/%m/%Y')}",
+        "product_id": product.id,
+        "created_at": product.created_at,
+        "synced_journal_entries": synced_entries
+    }
 
 @router.post("/products/{product_id}/sell")
 def sell_vitrina_product(
@@ -348,6 +411,9 @@ def sell_vitrina_product(
     total_sale = round(quantity * unit_price, 2)
     cost_of_goods = round(quantity * (product.unit_cost_cop or 0.0), 2)
     
+    sale_raw_date = payload.get("date") or payload.get("sale_date") or payload.get("created_at")
+    sale_dt = parse_entry_datetime(sale_raw_date) if sale_raw_date else datetime.utcnow()
+    
     # Descontar stock de vitrina
     product.current_stock_units = max(0, (product.current_stock_units or 0) - quantity)
     product.outgoing_units = (product.outgoing_units or 0) + quantity
@@ -365,7 +431,8 @@ def sell_vitrina_product(
         discount=0.0,
         tax=0.0,
         total=total_sale,
-        status="INVOICED"
+        status="INVOICED",
+        created_at=sale_dt
     )
     db.add(doc)
     db.commit()
@@ -386,7 +453,7 @@ def sell_vitrina_product(
     entry_num = get_next_entry_number(db)
     j1 = JournalEntry(
         entry_number=entry_num,
-        entry_date=datetime.utcnow(),
+        entry_date=sale_dt,
         puc_code="110505",
         account_name="Caja General",
         description=f"Venta Vitrina: {product.name} ({quantity} unds) Factura {doc_number}",
@@ -395,7 +462,7 @@ def sell_vitrina_product(
     )
     j2 = JournalEntry(
         entry_number=entry_num,
-        entry_date=datetime.utcnow(),
+        entry_date=sale_dt,
         puc_code="412005",
         account_name="Ingresos - Industrias Manufactureras",
         description=f"Venta Vitrina Factura {doc_number}",
@@ -409,7 +476,7 @@ def sell_vitrina_product(
     if cost_of_goods > 0:
         j_cogs = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=sale_dt,
             puc_code="612005",
             account_name="Costo de Ventas - Industrias Manufactureras",
             description=f"Costo Mercancía Vendida Vitrina: {product.name} ({quantity} unds)",
@@ -418,7 +485,7 @@ def sell_vitrina_product(
         )
         j_inv = JournalEntry(
             entry_number=entry_num,
-            entry_date=datetime.utcnow(),
+            entry_date=sale_dt,
             puc_code="143005",
             account_name="Inventario de Productos Terminados",
             description=f"Salida Stock Vitrina: {product.name} ({quantity} unds)",
@@ -442,7 +509,8 @@ def sell_vitrina_product(
     return {
         "message": f"Factura {doc_number} generada exitosamente y {quantity} unds descontadas de vitrina",
         "doc_number": doc_number,
-        "document_id": doc.id
+        "document_id": doc.id,
+        "date": sale_dt.strftime("%Y-%m-%d")
     }
 
 @router.delete("/products/{product_id}")

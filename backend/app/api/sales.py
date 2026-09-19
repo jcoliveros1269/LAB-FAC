@@ -770,6 +770,8 @@ def send_plates_to_inventory(
             existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + qty)
             if unit_cost > 0:
                 existing_prod.unit_cost_cop = unit_cost
+            if req.date:
+                existing_prod.created_at = parsed_date
             if is_internal:
                 existing_prod.sale_price_with_margin = 0.0
                 existing_prod.internal_accounting_target = accounting_target
@@ -801,7 +803,8 @@ def send_plates_to_inventory(
                 sale_price_with_margin=0.0 if is_internal else unit_price,
                 min_stock_alert=5,
                 is_internal_use=is_internal,
-                internal_accounting_target=accounting_target if is_internal else None
+                internal_accounting_target=accounting_target if is_internal else None,
+                created_at=parsed_date
             )
             db.add(new_prod)
             db.flush()

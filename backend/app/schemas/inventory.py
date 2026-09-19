@@ -53,13 +53,20 @@ class FinishedProductBase(BaseModel):
     sale_price_with_margin: float = 0.0
     min_stock_alert: int = 5
     is_internal_use: Optional[bool] = False
+    internal_accounting_target: Optional[str] = "ASSET"
     skip_accounting: Optional[bool] = False
+    created_at: Optional[Union[datetime, str]] = None
+    entry_date: Optional[Union[datetime, str]] = None
 
 class FinishedProductCreate(FinishedProductBase):
     pass
 
+class FinishedProductDateUpdate(BaseModel):
+    created_at: Union[datetime, str]
+
 class FinishedProductResponse(FinishedProductBase):
     id: int
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
