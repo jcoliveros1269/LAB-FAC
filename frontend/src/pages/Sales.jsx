@@ -594,22 +594,22 @@ export default function Sales({ setActiveTab }) {
       initialItems.push({
         product_id: preselectedProduct.id,
         name: preselectedProduct.name,
-        serial_code: preselectedProduct.serial_code || '',
+        serial_code: preselectedProduct.serial || preselectedProduct.serial_code || '',
         quantity: 1,
-        unit_price: preselectedProduct.sale_price_with_margin || preselectedProduct.sale_price || 0,
-        cost_price: preselectedProduct.unit_cost_cop || preselectedProduct.unit_cost || 0,
-        max_stock: preselectedProduct.current_stock_units || 1
+        unit_price: Number(preselectedProduct.sale_price_with_margin || preselectedProduct.sale_price || 0),
+        cost_price: Number(preselectedProduct.unit_cost_cop || preselectedProduct.unit_cost || 0),
+        max_stock: Number(preselectedProduct.current_stock_units || 1)
       });
     } else if (available.length > 0) {
       const first = available[0];
       initialItems.push({
         product_id: first.id,
         name: first.name,
-        serial_code: first.serial_code || '',
+        serial_code: first.serial || first.serial_code || '',
         quantity: 1,
-        unit_price: first.sale_price_with_margin || first.sale_price || 0,
-        cost_price: first.unit_cost_cop || first.unit_cost || 0,
-        max_stock: first.current_stock_units || 1
+        unit_price: Number(first.sale_price_with_margin || first.sale_price || 0),
+        cost_price: Number(first.unit_cost_cop || first.unit_cost || 0),
+        max_stock: Number(first.current_stock_units || 1)
       });
     }
 
@@ -640,11 +640,11 @@ export default function Sales({ setActiveTab }) {
         {
           product_id: nextProd.id,
           name: nextProd.name,
-          serial_code: nextProd.serial_code || '',
+          serial_code: nextProd.serial || nextProd.serial_code || '',
           quantity: 1,
-          unit_price: nextProd.sale_price_with_margin || nextProd.sale_price || 0,
-          cost_price: nextProd.unit_cost_cop || nextProd.unit_cost || 0,
-          max_stock: nextProd.current_stock_units || 1
+          unit_price: Number(nextProd.sale_price_with_margin || nextProd.sale_price || 0),
+          cost_price: Number(nextProd.unit_cost_cop || nextProd.unit_cost || 0),
+          max_stock: Number(nextProd.current_stock_units || 1)
         }
       ]
     }));
@@ -672,10 +672,10 @@ export default function Sales({ setActiveTab }) {
         if (selectedProd) {
           currentItem.product_id = selectedProd.id;
           currentItem.name = selectedProd.name;
-          currentItem.serial_code = selectedProd.serial_code || '';
-          currentItem.unit_price = selectedProd.sale_price_with_margin || selectedProd.sale_price || 0;
-          currentItem.cost_price = selectedProd.unit_cost_cop || selectedProd.unit_cost || 0;
-          currentItem.max_stock = selectedProd.current_stock_units || 1;
+          currentItem.serial_code = selectedProd.serial || selectedProd.serial_code || '';
+          currentItem.unit_price = Number(selectedProd.sale_price_with_margin || selectedProd.sale_price || 0);
+          currentItem.cost_price = Number(selectedProd.unit_cost_cop || selectedProd.unit_cost || 0);
+          currentItem.max_stock = Number(selectedProd.current_stock_units || 1);
           if (currentItem.quantity > currentItem.max_stock) {
             currentItem.quantity = currentItem.max_stock;
           }
@@ -714,30 +714,49 @@ export default function Sales({ setActiveTab }) {
 
     try {
       setVitrinaBillingLoading(true);
-      const subtotal = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * it.unit_price), 0);
+      const subtotal = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0);
+      const randomNum = Math.floor(100 + Math.random() * 900);
+      const docNumber = `FAC-VIT-${Date.now().toString().slice(-4)}${randomNum}`;
+
       const payload = {
+        doc_number: docNumber,
         doc_type: 'FACTURA',
         status: 'INVOICED',
         customer_id: vitrinaInvoiceForm.customer_id ? parseInt(vitrinaInvoiceForm.customer_id, 10) : null,
         created_at: vitrinaInvoiceForm.doc_date ? `${vitrinaInvoiceForm.doc_date}T12:00:00` : null,
         is_internal_use: false,
         subtotal: subtotal,
-        discount_amount: 0,
-        total_amount: subtotal,
-        observations: vitrinaInvoiceForm.observations || 'Facturación directa de productos de Vitrina',
-        items: vitrinaInvoiceForm.items.map(it => ({
-          product_name: `${it.name}${it.serial_code ? ` [${it.serial_code}]` : ''}`,
-          quantity: parseInt(it.quantity, 10),
-          unit_price: parseFloat(it.unit_price),
-          total_price: parseInt(it.quantity, 10) * parseFloat(it.unit_price),
-          unit_cost: parseFloat(it.cost_price || 0)
-        }))
+        discount: 0.0,
+        tax: 0.0,
+        total: subtotal,
+        items: vitrinaInvoiceForm.items.map(it => {
+          const qty = parseInt(it.quantity, 10) || 1;
+          const uPrice = parseFloat(it.unit_price) || 0;
+          const uCost = parseFloat(it.cost_price) || 0;
+          return {
+            product_name: `${it.name}${it.serial_code ? ` [${it.serial_code}]` : ''}`,
+            quantity: qty,
+            unit_grams: 0.0,
+            print_hours: 0.0,
+            unit_cost: uCost,
+            unit_price: uPrice,
+            total_price: qty * uPrice,
+            material_cost: uCost * qty,
+            energy_cost: 0.0,
+            depreciation_cost: 0.0,
+            labor_cost: 0.0,
+            additional_cost: 0.0
+          };
+        })
       };
 
       const res = await salesService.createDocument(payload);
-      toast.success(res.data?.message || 'Factura comercial de Vitrina creada exitosamente');
+      toast.success(res.data?.message || `Factura comercial ${docNumber} creada exitosamente`);
       setShowVitrinaInvoiceModal(false);
       loadSalesData();
+      if (res.data) {
+        setSelectedDocForPrint(res.data);
+      }
     } catch (err) {
       console.error('Error al facturar vitrina:', err);
       toast.error(err.response?.data?.detail || 'Error al facturar productos de Vitrina');
@@ -1283,7 +1302,7 @@ export default function Sales({ setActiveTab }) {
                         <td className="py-2.5 px-3 text-[#A0A0A0]">
                           {doc.customer ? doc.customer.name : 'Cliente General'}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[#A0A0A0]">${doc.subtotal.toLocaleString('es-CO')}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[#A0A0A0]">${Number(doc.subtotal || 0).toLocaleString('es-CO')}</td>
                         <td className="py-2.5 px-3 text-right">
                           {Number(doc.discount) > 0 ? (
                             <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono font-semibold" title={`Descuento aplicado: -$${Number(doc.discount).toLocaleString('es-CO')}`}>
@@ -1293,7 +1312,7 @@ export default function Sales({ setActiveTab }) {
                             <span className="text-[#555555] font-mono">-</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-400">${doc.total.toLocaleString('es-CO')} COP</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-400">${Number(doc.total || 0).toLocaleString('es-CO')} COP</td>
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 text-[10px] rounded-sm font-medium ${
                             doc.status === 'PAID' || doc.doc_type === 'FACTURA'
@@ -2813,7 +2832,7 @@ export default function Sales({ setActiveTab }) {
                             </td>
 
                             <td className="py-2 px-2 text-right font-mono font-bold text-emerald-300">
-                              ${subtotalLine.toLocaleString('es-CO')}
+                              ${Number(subtotalLine || 0).toLocaleString('es-CO')}
                             </td>
 
                             <td className="py-2 px-1 text-center">
@@ -2838,8 +2857,8 @@ export default function Sales({ setActiveTab }) {
             {/* Resumen Financiero de la Factura de Vitrina */}
             {(() => {
               const totalUnits = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (parseInt(it.quantity, 10) || 0), 0);
-              const totalCost = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * (it.cost_price || 0)), 0);
-              const totalVenta = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (it.quantity * (it.unit_price || 0)), 0);
+              const totalCost = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (Number(it.quantity || 0) * Number(it.cost_price || 0)), 0);
+              const totalVenta = vitrinaInvoiceForm.items.reduce((acc, it) => acc + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0);
               const profit = totalVenta - totalCost;
 
               return (
@@ -2851,18 +2870,18 @@ export default function Sales({ setActiveTab }) {
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
                     <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Costo Total Fab.</span>
-                    <span className="text-sm font-bold text-slate-300 font-mono">${totalCost.toLocaleString('es-CO')}</span>
+                    <span className="text-sm font-bold text-slate-300 font-mono">${Number(totalCost || 0).toLocaleString('es-CO')}</span>
                   </div>
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-emerald-500/30">
                     <span className="text-[10px] text-emerald-400 block uppercase font-semibold">Total Facturado</span>
-                    <span className="text-base font-bold text-emerald-400 font-mono">${totalVenta.toLocaleString('es-CO')}</span>
+                    <span className="text-base font-bold text-emerald-400 font-mono">${Number(totalVenta || 0).toLocaleString('es-CO')}</span>
                   </div>
 
                   <div className="p-2 bg-[#1A1A1A] rounded-sm border border-[#2A2A2A]">
                     <span className="text-[10px] text-[#A0A0A0] block uppercase font-medium">Ganancia Proyectada</span>
                     <span className={`text-sm font-bold font-mono ${profit >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                      ${profit.toLocaleString('es-CO')}
+                      ${Number(profit || 0).toLocaleString('es-CO')}
                     </span>
                   </div>
                 </div>

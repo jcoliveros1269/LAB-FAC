@@ -11,6 +11,7 @@ import Production from './pages/Production';
 import Sales from './pages/Sales';
 import Accounting from './pages/Accounting';
 import Config from './pages/Config';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function AppContent() {
   const { user, loading, isAuthenticated, allowedTabs, canAccess } = useAuth();
@@ -117,7 +118,9 @@ function AppContent() {
         <Header activeTitle={titles[activeTab] || 'Prisma Lab ERP'} theme={theme} toggleTheme={toggleTheme} />
 
         <main className="flex-1 p-4 md:p-6 w-full space-y-6">
-          {renderActiveView()}
+          <ErrorBoundary key={activeTab} onReset={() => setActiveTab('dashboard')}>
+            {renderActiveView()}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
