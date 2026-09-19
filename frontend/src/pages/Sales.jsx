@@ -32,7 +32,7 @@ import InvoicePrintView from '../components/InvoicePrintView';
 import DateRangeFilter, { isDateInRange, formatDate } from '../components/DateRangeFilter';
 import { useAuth } from '../context/AuthContext';
 
-export default function Sales() {
+export default function Sales({ setActiveTab }) {
   const { canDelete, canEdit, isReadOnly } = useAuth();
   const [activeSubtab, setActiveSubtab] = useState(() => {
     return localStorage.getItem('prisma_lab_subtab_sales') || 'documents';
@@ -48,6 +48,7 @@ export default function Sales() {
   const [supplies, setSupplies] = useState([]);
   const [finishedProducts, setFinishedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingToInventory, setSendingToInventory] = useState(false);
   const [selectedDocForPrint, setSelectedDocForPrint] = useState(null);
 
   // Filtros de Documentos
@@ -581,6 +582,56 @@ export default function Sales() {
       loadSalesData();
     } catch (err) {
       toast.error('Error al eliminar documento');
+    }
+  };
+
+  const handleSendToInventory = async () => {
+    const totals = calculateQuoteTotals();
+    const plates = totals.plates || [];
+    if (plates.length === 0) {
+      toast.error('Debe haber al menos una placa para enviar a inventario');
+      return;
+    }
+
+    const isInternal = Boolean(quoteForm.is_internal_use);
+    const destName = isInternal ? 'Apartado No a la Venta (Uso Interno)' : 'Vitrina (A la Venta)';
+
+    setSendingToInventory(true);
+    try {
+      const payload = {
+        project_name: quoteForm.project_name || '',
+        is_internal_use: isInternal,
+        internal_accounting_target: quoteForm.internal_accounting_target || 'ASSET',
+        date: quoteForm.doc_date || new Date().toISOString().split('T')[0],
+        plates: plates.map((p, idx) => ({
+          name: p.name || `Placa ${idx + 1}`,
+          quantity: p.pQty,
+          unit_cost: p.plateUnitCost,
+          unit_price: p.plateUnitPrice,
+          filaments: (p.filaments || []).map(f => ({
+            material_id: f.material_id ? parseInt(f.material_id, 10) : null,
+            article_code: f.article_code || '',
+            type: f.type || 'PLA',
+            color: f.color || 'Negro',
+            grams: parseFloat(f.grams) || 0
+          }))
+        }))
+      };
+
+      const res = await salesService.sendToInventory(payload);
+      toast.success(res.data?.message || `Piezas enviadas con éxito a ${destName}`);
+      loadSalesData();
+
+      // Guardar pestaña en inventario para que abra en el lugar correcto
+      localStorage.setItem('prisma_lab_subtab_inventory', isInternal ? 'no_sale' : 'vitrina');
+      if (setActiveTab) {
+        setActiveTab('inventory');
+      }
+    } catch (err) {
+      console.error('Error enviando a inventario:', err);
+      toast.error(err.response?.data?.detail || 'Error al enviar piezas a inventario');
+    } finally {
+      setSendingToInventory(false);
     }
   };
 
@@ -1970,10 +2021,22 @@ export default function Sales() {
               </div>
 
               <div className="p-4 bg-[#101010] border border-[#2A2A2A] rounded-sm mt-3 space-y-1 text-center">
-                <span className="text-[10px] text-emerald-400 uppercase font-medium">
-                  TOTAL A COTIZAR ({currentTotals.totalUnits} {currentTotals.totalUnits === 1 ? 'und' : 'unds'} en {currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'placa' : 'placas'})
+                <span className={`text-[10px] uppercase font-semibold flex items-center justify-center gap-1.5 ${
+                  quoteForm.is_internal_use ? 'text-amber-400' : 'text-emerald-400'
+                }`}>
+                  {quoteForm.is_internal_use ? (
+                    <>
+                      <Wrench className="w-3 h-3" />
+                      <span>TOTAL FABRICACIÓN (USO INTERNO - AL COSTO) ({currentTotals.totalUnits} {currentTotals.totalUnits === 1 ? 'und' : 'unds'})</span>
+                    </>
+                  ) : (
+                    <>
+                      <Layers className="w-3 h-3" />
+                      <span>TOTAL VENTA COMERCIAL / VITRINA ({currentTotals.totalUnits} {currentTotals.totalUnits === 1 ? 'und' : 'unds'})</span>
+                    </>
+                  )}
                 </span>
-                <p className="text-2xl font-bold text-emerald-400 font-mono">
+                <p className={`text-2xl font-bold font-mono ${quoteForm.is_internal_use ? 'text-amber-300' : 'text-emerald-400'}`}>
                   ${currentTotals.totalPrice.toLocaleString('es-CO', { maximumFractionDigits: 2 })} COP
                 </p>
                 {currentTotals.discountAmount > 0 && (
@@ -1985,23 +2048,68 @@ export default function Sales() {
             </div>
 
             <div className="space-y-2 pt-4 border-t border-[#2A2A2A]">
-              <button
-                type="button"
-                onClick={() => handleGenerateQuoteOrInvoice('COTIZACION')}
-                className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 transition-colors"
-              >
-                <FileText className="w-4 h-4" strokeWidth={1.5} />
-                <span>Generar Cotización ({currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'Placa' : 'Placas'})</span>
-              </button>
+              {!quoteForm.is_internal_use ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendToInventory}
+                    disabled={sendingToInventory}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/40 text-xs"
+                  >
+                    <Layers className="w-4 h-4" strokeWidth={2} />
+                    <span>
+                      {sendingToInventory 
+                        ? 'Enviando a Vitrina...' 
+                        : `Mandar a Inventario de Vitrina (${currentTotals.totalUnits} ${currentTotals.totalUnits === 1 ? 'und' : 'unds'} A la Venta)`}
+                    </span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => handleGenerateQuoteOrInvoice('FACTURA')}
-                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-sm flex items-center justify-center gap-2 transition-colors"
-              >
-                <CheckCircle2 className="w-4 h-4" strokeWidth={1.5} />
-                <span>Generar Factura Directa ({currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'Placa' : 'Placas'})</span>
-              </button>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateQuoteOrInvoice('COTIZACION')}
+                      className="py-2 bg-[#1A1A1A] hover:bg-[#252525] text-[#EAEAEA] border border-[#2A2A2A] font-medium rounded-sm flex items-center justify-center gap-1.5 text-xs transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+                      <span>Generar Cotización</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateQuoteOrInvoice('FACTURA')}
+                      className="py-2 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-sm flex items-center justify-center gap-1.5 text-xs transition-colors"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.5} />
+                      <span>Factura Directa</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendToInventory}
+                    disabled={sendingToInventory}
+                    className="w-full py-3 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white font-bold rounded-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-950/40 text-xs"
+                  >
+                    <Wrench className="w-4 h-4" strokeWidth={2} />
+                    <span>
+                      {sendingToInventory 
+                        ? 'Enviando a Uso Interno...' 
+                        : `Mandar a Inventario de Uso Interno (${currentTotals.totalUnits} ${currentTotals.totalUnits === 1 ? 'und' : 'unds'} No a la Venta)`}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateQuoteOrInvoice('FACTURA')}
+                    className="w-full py-2 bg-[#1A1A1A] hover:bg-[#252525] text-[#EAEAEA] border border-[#2A2A2A] font-medium rounded-sm flex items-center justify-center gap-1.5 text-xs transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-400" strokeWidth={1.5} />
+                    <span>Registrar Documento de Uso Interno ({currentTotals.plates?.length || 1} {currentTotals.plates?.length === 1 ? 'Placa' : 'Placas'})</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

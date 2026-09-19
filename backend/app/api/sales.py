@@ -13,9 +13,10 @@ from app.core.security import require_permission
 from app.api.auth import log_audit_event
 from app.schemas.sales import (
     CustomerResponse, CustomerCreate,
-    SalesDocumentResponse, SalesDocumentCreate, SalesDocumentDateUpdate
+    SalesDocumentResponse, SalesDocumentCreate, SalesDocumentDateUpdate,
+    SendToInventoryRequest
 )
-from app.api.inventory import parse_entry_datetime
+from app.api.inventory import parse_entry_datetime, get_next_entry_number
 
 router = APIRouter(prefix="/sales", tags=["Ventas & Cotizaciones"])
 
@@ -462,8 +463,8 @@ def create_sales_document(
     for s_it in saved_items:
         db.refresh(s_it)
 
-    # Si nace como FACTURA / PAID: Descontar materia prima, actualizar stock de producto terminado y asentar contabilidad
-    if db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
+    # Si es Uso Interno, o nace como FACTURA / PAID: Descontar materia prima, actualizar stock de producto terminado y asentar contabilidad
+    if is_internal or db_doc.doc_type == "FACTURA" or db_doc.status in ["INVOICED", "PAID"]:
         deduct_materials_for_document(db, saved_items)
 
         for item in saved_items:
@@ -681,6 +682,209 @@ def update_document_date(
     )
 
     return doc
+
+@router.post("/send-to-inventory")
+def send_plates_to_inventory(
+    req: SendToInventoryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales", "write"))
+):
+    """
+    Envía directamente las piezas/placas calculadas en el Cotizador al Inventario:
+    - Venta Comercial: a Vitrina (A la Venta) con stock disponible y precio de venta.
+    - Uso Interno: a Apartado No a la Venta (Dotación de Taller) a costo de fabricación.
+    En ambos casos descuenta los filamentos y asienta la partida doble contable.
+    """
+    if not req.plates:
+        raise HTTPException(status_code=400, detail="Debe especificar al menos una placa para enviar a inventario")
+
+    parsed_date = parse_entry_datetime(req.date) if req.date else datetime.utcnow()
+    is_internal = bool(req.is_internal_use)
+    accounting_target = req.internal_accounting_target or "ASSET"
+
+    created_or_updated = []
+    total_batch_cost = 0.0
+    total_units = 0
+
+    for idx, plate in enumerate(req.plates):
+        qty = max(1, int(plate.quantity or 1))
+        total_units += qty
+        unit_cost = max(0.0, float(plate.unit_cost or 0.0))
+        unit_price = max(0.0, float(plate.unit_price or 0.0))
+        total_plate_cost = unit_cost * qty
+        total_batch_cost += total_plate_cost
+
+        # Nombre del producto
+        clean_name = plate.name.strip()
+        if req.project_name and req.project_name.strip() and req.project_name.strip().lower() not in clean_name.lower():
+            clean_name = f"{req.project_name.strip()} - {clean_name}"
+
+        # 1. Descontar materias primas (filamentos)
+        fil_colors = []
+        fil_types = []
+        for fil in plate.filaments:
+            f_grams = float(fil.grams or 0.0)
+            f_type = (fil.type or "").strip()
+            f_color = (fil.color or "").strip()
+            if f_color:
+                fil_colors.append(f_color)
+            if f_type:
+                fil_types.append(f_type)
+
+            if f_grams <= 0:
+                continue
+
+            mat = None
+            if fil.material_id:
+                try:
+                    mat = db.query(RawMaterial).filter(RawMaterial.id == int(fil.material_id)).first()
+                except Exception:
+                    pass
+            if not mat and fil.article_code:
+                mat = db.query(RawMaterial).filter(RawMaterial.article_code.ilike(fil.article_code.strip())).first()
+            if not mat and f_type:
+                q_mat = db.query(RawMaterial).filter(RawMaterial.material_type.ilike(f_type))
+                if f_color:
+                    mat = q_mat.filter(RawMaterial.color.ilike(f_color), RawMaterial.current_stock_g > 0).order_by(RawMaterial.id.desc()).first()
+                    if not mat:
+                        mat = q_mat.filter(RawMaterial.color.ilike(f_color)).order_by(RawMaterial.id.desc()).first()
+                if not mat:
+                    mat = q_mat.order_by(RawMaterial.id.desc()).first()
+
+            if mat:
+                mat.outgoing_stock_g = (mat.outgoing_stock_g or 0.0) + f_grams
+                mat.current_stock_g = max(0.0, (mat.initial_stock_g or 0.0) - mat.outgoing_stock_g)
+                db.add(mat)
+
+        color_desc = " / ".join(list(dict.fromkeys(fil_colors))) if fil_colors else "Multicolor"
+        type_desc = " / ".join(list(dict.fromkeys(fil_types))) if fil_types else "Pieza 3D"
+
+        # 2. Crear o actualizar FinishedProduct
+        existing_prod = db.query(FinishedProduct).filter(
+            FinishedProduct.name.ilike(clean_name),
+            FinishedProduct.is_internal_use == is_internal
+        ).first()
+
+        if existing_prod:
+            existing_prod.initial_stock_units = max(0, (existing_prod.initial_stock_units or 0) + qty)
+            existing_prod.current_stock_units = max(0, (existing_prod.current_stock_units or 0) + qty)
+            if unit_cost > 0:
+                existing_prod.unit_cost_cop = unit_cost
+            if is_internal:
+                existing_prod.sale_price_with_margin = 0.0
+                existing_prod.internal_accounting_target = accounting_target
+            else:
+                if unit_price > 0:
+                    existing_prod.sale_price_with_margin = unit_price
+            db.add(existing_prod)
+            created_or_updated.append({
+                "id": existing_prod.id,
+                "name": existing_prod.name,
+                "serial": existing_prod.serial,
+                "stock": existing_prod.current_stock_units,
+                "action": "updated"
+            })
+        else:
+            time_suffix = f"{int(datetime.utcnow().timestamp() * 1000) % 1000000:06d}"
+            serial_prefix = "INT" if is_internal else "VIT"
+            serial_code = f"{serial_prefix}-{time_suffix}"
+
+            new_prod = FinishedProduct(
+                serial=serial_code,
+                name=clean_name,
+                color=color_desc,
+                material_type=type_desc,
+                initial_stock_units=qty,
+                outgoing_units=0,
+                current_stock_units=qty,
+                unit_cost_cop=unit_cost,
+                sale_price_with_margin=0.0 if is_internal else unit_price,
+                min_stock_alert=5,
+                is_internal_use=is_internal,
+                internal_accounting_target=accounting_target if is_internal else None
+            )
+            db.add(new_prod)
+            db.flush()
+            created_or_updated.append({
+                "id": new_prod.id,
+                "name": new_prod.name,
+                "serial": new_prod.serial,
+                "stock": new_prod.current_stock_units,
+                "action": "created"
+            })
+
+    # 3. Asiento Contable Automático (Partida Doble)
+    if total_batch_cost > 0:
+        entry_num = get_next_entry_number(db)
+        if is_internal:
+            # Uso Interno: Débito 152405 (Activo) o 519505 (Gasto) vs Crédito 140505
+            puc_deb = "519505" if accounting_target == "EXPENSE" else "152405"
+            acc_deb = "Gastos Diversos - Dotación y Mantenimiento Taller" if accounting_target == "EXPENSE" else "Equipo de Taller y Herramientas (Uso Propio)"
+            tag_label = "Gasto Dotación Taller" if accounting_target == "EXPENSE" else "Activo Fijo Taller"
+
+            j_deb = JournalEntry(
+                entry_number=entry_num,
+                entry_date=parsed_date,
+                puc_code=puc_deb,
+                account_name=acc_deb,
+                description=f"Alta Fabricación Interna [{tag_label}]: {total_units} unds ({req.project_name or 'Piezas Taller'})",
+                debit=round(total_batch_cost, 2),
+                credit=0.0
+            )
+            j_cred = JournalEntry(
+                entry_number=entry_num,
+                entry_date=parsed_date,
+                puc_code="140505",
+                account_name="Inventario de Materias Primas / Filamentos",
+                description=f"Salida Materia Prima Fabricación Interna ({total_units} unds)",
+                debit=0.0,
+                credit=round(total_batch_cost, 2)
+            )
+            db.add(j_deb)
+            db.add(j_cred)
+        else:
+            # Venta Comercial: Débito 143005 (Inventario Vitrina) vs Crédito 710505 (Costos de Producción - Materias Primas)
+            j_deb = JournalEntry(
+                entry_number=entry_num,
+                entry_date=parsed_date,
+                puc_code="143005",
+                account_name="Inventario de Productos Terminados (Vitrina)",
+                description=f"Alta Producción Vitrina (A la Venta): {total_units} unds ({req.project_name or 'Piezas Vitrina'})",
+                debit=round(total_batch_cost, 2),
+                credit=0.0
+            )
+            j_cred = JournalEntry(
+                entry_number=entry_num,
+                entry_date=parsed_date,
+                puc_code="710505",
+                account_name="Costos de Producción - Materias Primas",
+                description=f"Consumo Materia Prima Piezas Vitrina ({total_units} unds)",
+                debit=0.0,
+                credit=round(total_batch_cost, 2)
+            )
+            db.add(j_deb)
+            db.add(j_cred)
+
+    db.commit()
+
+    dest_label = "Apartado No a la Venta (Uso Interno)" if is_internal else "Vitrina (A la Venta)"
+    log_audit_event(
+        db=db,
+        username=current_user.username,
+        module="sales",
+        action="SEND_TO_INVENTORY",
+        description=f"Envió {total_units} unds al inventario de {dest_label}. Costo total: ${total_batch_cost:,.2f} COP",
+        user_id=current_user.id
+    )
+
+    return {
+        "success": True,
+        "message": f"{total_units} {'unidad enviada' if total_units == 1 else 'unidades enviadas'} a {dest_label}",
+        "destination": "no_sale" if is_internal else "vitrina",
+        "total_units": total_units,
+        "total_cost": total_batch_cost,
+        "items": created_or_updated
+    }
 
 @router.delete("/documents/{doc_id}")
 def delete_sales_document(

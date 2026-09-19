@@ -498,6 +498,47 @@ export default function Production({ setActiveTab }) {
     }
   };
 
+  const handleSaveToCommercialInventory = async () => {
+    if (!calcResult) return;
+    try {
+      setLoading(true);
+      const filamentDesc = (formData.filaments || [])
+        .filter(f => parseFloat(f.grams) > 0)
+        .map(f => `${f.type} ${f.color}`)
+        .join(' + ');
+
+      const qty = parseInt(calcResult.quantity, 10) || 1;
+      const unitCost = calcResult.total_unit_cost || 0;
+      const unitPrice = calcResult.suggested_price_margin || 0;
+
+      const productPayload = {
+        name: calcResult.project_name,
+        serial: `VIT-${calcResult.project_code}`,
+        category: 'VITRINA',
+        material_type: calcResult.filament1_type || '3D',
+        color: calcResult.filament1_color || filamentDesc || 'Comercial',
+        current_stock_units: qty,
+        unit_cost_cop: unitCost,
+        sale_price_with_margin: unitPrice,
+        margin_percentage: calcResult.profit_margin || 0.0,
+        status: 'DISPONIBLE',
+        is_internal_use: false,
+        skip_accounting: Boolean(formData.deduct_from_inventory),
+        notes: `Pieza guardada en vitrina desde cálculo #${calcResult.project_code}`
+      };
+
+      await inventoryService.createProduct(productPayload);
+      toast.success(`Producto '${calcResult.project_name}' guardado en Vitrina (${qty} unds)`);
+      localStorage.setItem('prisma_lab_subtab_inventory', 'vitrina');
+      if (setActiveTab) setActiveTab('inventory');
+    } catch (err) {
+      console.error('Error al guardar en vitrina:', err);
+      toast.error(err.response?.data?.detail || 'Error guardando en vitrina');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredHistory = history.filter((row) => {
     const q = historySearch.toLowerCase().trim();
     const matchesSearch =
@@ -1250,13 +1291,23 @@ export default function Production({ setActiveTab }) {
                   <span>Guardar en Apartado No a la Venta</span>
                 </button>
               ) : (
-                <button
-                  onClick={handleConvertToQuote}
-                  className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded-sm flex items-center justify-center gap-2 mt-4 transition-colors"
-                >
-                  <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  <span>Convertir en Cotización</span>
-                </button>
+                <div className="space-y-2 mt-4">
+                  <button
+                    onClick={handleSaveToCommercialInventory}
+                    disabled={loading}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
+                  >
+                    <Layers className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    <span>Guardar en Vitrina (A la Venta)</span>
+                  </button>
+                  <button
+                    onClick={handleConvertToQuote}
+                    className="w-full py-2 bg-[#1A1A1A] hover:bg-[#252525] text-[#EAEAEA] border border-[#2A2A2A] font-medium rounded-sm flex items-center justify-center gap-2 transition-colors text-xs"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+                    <span>Convertir en Cotización</span>
+                  </button>
+                </div>
               )
             )}
           </div>

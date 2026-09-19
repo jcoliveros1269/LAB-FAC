@@ -69,3 +69,25 @@ class SalesDocumentResponse(SalesDocumentBase):
 
     class Config:
         from_attributes = True
+
+class SendToInventoryPlateFilament(BaseModel):
+    material_id: Optional[int] = None
+    article_code: Optional[str] = None
+    type: Optional[str] = "PLA"
+    color: Optional[str] = "Negro"
+    grams: float = 0.0
+
+class SendToInventoryPlate(BaseModel):
+    name: str
+    quantity: int = 1
+    unit_cost: float = 0.0
+    unit_price: float = 0.0
+    filaments: List[SendToInventoryPlateFilament] = []
+
+class SendToInventoryRequest(BaseModel):
+    project_name: Optional[str] = None
+    is_internal_use: bool = False
+    internal_accounting_target: Optional[str] = "ASSET"
+    date: Optional[Union[datetime, str]] = None
+    plates: List[SendToInventoryPlate] = []
+

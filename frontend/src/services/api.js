@@ -84,6 +84,7 @@ export const salesService = {
   createDocument: (data) => api.post('/sales/documents', data),
   convertToInvoice: (id, payload) => api.post(`/sales/documents/${id}/convert-to-invoice`, payload),
   updateDocumentDate: (id, data) => api.put(`/sales/documents/${id}/date`, data),
+  sendToInventory: (data) => api.post('/sales/send-to-inventory', data),
   deleteDocument: (id) => api.delete(`/sales/documents/${id}`),
 };
 
